@@ -116,11 +116,10 @@ export class OutputManager {
 - **Source:** ${metricsData.source}
 - **Latest:** ${metricsData.latest.tag} @ ${metricsData.latest.created_at}
 - **Deployment Frequency (days):** ${metrics.deployment_frequency_days ?? 'N/A'}
-- **Lead Time for Change**
-  - commit_count: ${ltc.commit_count}
-  - avg: ${formatHoursToDays(ltc.avg_hours)}
-  - oldest: ${formatHoursToDays(ltc.oldest_hours)} ${ltc.oldest_commit_sha ? `(${ltc.oldest_commit_sha.substring(0, 7)})` : ''}
-  - newest: ${formatHoursToDays(ltc.newest_hours)} ${ltc.newest_commit_sha ? `(${ltc.newest_commit_sha.substring(0, 7)})` : ''}
+- **Lead Time for Change:** ${formatHoursToDays(ltc.avg_hours)}
+  - Number of commits: ${ltc.commit_count}
+  - Oldest: ${formatHoursToDays(ltc.oldest_hours)} ${ltc.oldest_commit_sha ? `(${ltc.oldest_commit_sha.substring(0, 7)})` : ''}
+  - Newest: ${formatHoursToDays(ltc.newest_hours)} ${ltc.newest_commit_sha ? `(${ltc.newest_commit_sha.substring(0, 7)})` : ''}
       `
 
       await core.summary.addRaw(summary).write()
