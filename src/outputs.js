@@ -79,18 +79,22 @@ export class OutputManager {
       return
     }
 
-    // Set individual metric outputs
-    const metrics = metricsData.metrics
-    const ltc = metrics.lead_time_for_change
+    // Set DORA metric outputs if available
+    const doraMetrics = metricsData.metrics?.dora
+    if (doraMetrics) {
+      const ltc = doraMetrics.lead_time_for_change
 
-    core.setOutput(
-      'deployment-frequency',
-      metrics.deployment_frequency_days?.toString() || ''
-    )
-    core.setOutput('lead-time-avg', ltc.avg_hours?.toString() || '')
-    core.setOutput('lead-time-oldest', ltc.oldest_hours?.toString() || '')
-    core.setOutput('lead-time-newest', ltc.newest_hours?.toString() || '')
-    core.setOutput('commit-count', ltc.commit_count?.toString() || '0')
+      core.setOutput(
+        'deployment-frequency',
+        doraMetrics.deployment_frequency_days?.toString() || ''
+      )
+      core.setOutput('lead-time-avg', ltc?.avg_hours?.toString() || '')
+      core.setOutput('lead-time-oldest', ltc?.oldest_hours?.toString() || '')
+      core.setOutput('lead-time-newest', ltc?.newest_hours?.toString() || '')
+      core.setOutput('commit-count', ltc?.commit_count?.toString() || '0')
+    }
+
+    // DevEx outputs are set in main.js to avoid coupling
   }
 
   /**
@@ -101,32 +105,67 @@ export class OutputManager {
     try {
       if (metricsData.error) {
         const errorSummary = `
-### Delivery Metrics - Error
+### Agile Metrics - Error
 ❌ **Error:** ${metricsData.error}
         `
         await core.summary.addRaw(errorSummary).write()
         return
       }
 
-      const metrics = metricsData.metrics
-      const ltc = metrics.lead_time_for_change
+      let summary = `### Agile Metrics Summary\n`
 
-      const summary = `
-### Delivery Metrics
+      // Add DORA metrics section if available
+      const doraMetrics = metricsData.metrics?.dora
+      if (doraMetrics) {
+        const ltc = doraMetrics.lead_time_for_change
+        summary += `
+#### DORA Metrics
 - **Source:** ${metricsData.source}
-- **Latest:** ${metricsData.latest.tag} @ ${metricsData.latest.created_at}
-- **Deployment Frequency (days):** ${metrics.deployment_frequency_days ?? 'N/A'}
-- **Lead Time for Change:** ${formatHoursToDays(ltc.avg_hours)}
-  - Number of commits: ${ltc.commit_count}
-  - Oldest: ${formatHoursToDays(ltc.oldest_hours)} ${ltc.oldest_commit_sha ? `(${ltc.oldest_commit_sha.substring(0, 7)})` : ''}
-  - Newest: ${formatHoursToDays(ltc.newest_hours)} ${ltc.newest_commit_sha ? `(${ltc.newest_commit_sha.substring(0, 7)})` : ''}
-      `
+- **Latest:** ${metricsData.latest?.tag} @ ${metricsData.latest?.created_at}
+- **Deployment Frequency (days):** ${doraMetrics.deployment_frequency_days ?? 'N/A'}
+- **Lead Time for Change:** ${formatHoursToDays(ltc?.avg_hours)}
+  - Number of commits: ${ltc?.commit_count || 0}
+  - Oldest: ${formatHoursToDays(ltc?.oldest_hours)} ${ltc?.oldest_commit_sha ? `(${ltc.oldest_commit_sha.substring(0, 7)})` : ''}
+  - Newest: ${formatHoursToDays(ltc?.newest_hours)} ${ltc?.newest_commit_sha ? `(${ltc.newest_commit_sha.substring(0, 7)})` : ''}
+        `
+      }
+
+      // Add DevEx metrics section if available
+      const devexMetrics = metricsData.metrics?.devex
+      if (devexMetrics?.pr_size) {
+        const prSize = devexMetrics.pr_size
+        const emoji = this.getSizeEmoji(prSize.size)
+        summary += `
+#### DevEx Metrics
+- **PR Size:** ${emoji} ${prSize.size.toUpperCase()} (${prSize.category})
+- **Total Changes:** ${prSize.details.total_changes}
+- **Lines Added:** ${prSize.details.total_additions}
+- **Lines Removed:** ${prSize.details.total_deletions}
+- **Files Changed:** ${prSize.details.files_changed}
+        `
+      }
 
       await core.summary.addRaw(summary).write()
       core.info('Markdown summary created')
     } catch (error) {
       core.warning(`Failed to create markdown summary: ${error.message}`)
     }
+  }
+
+  /**
+   * Get emoji for PR size category
+   * @param {string} size - Size category
+   * @returns {string} Emoji representation
+   */
+  getSizeEmoji(size) {
+    const emojiMap = {
+      xs: '🤏',
+      s: '🔹',
+      m: '🔸',
+      l: '🔶',
+      xl: '🔥'
+    }
+    return emojiMap[size] || '❓'
   }
 
   /**
