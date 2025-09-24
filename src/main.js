@@ -133,7 +133,8 @@ export async function run() {
       if (devexMetrics.pr_number && devexMetrics.metrics?.pr_size) {
         await devexCollector.addPRComment(
           devexMetrics.pr_number,
-          devexMetrics.metrics.pr_size
+          devexMetrics.metrics.pr_size,
+          devexMetrics.metrics.pr_maturity
         )
         await devexCollector.addPRLabel(
           devexMetrics.pr_number,
@@ -151,6 +152,21 @@ export async function run() {
         core.setOutput(
           'pr-size-details',
           JSON.stringify(devexMetrics.metrics.pr_size.details)
+        )
+      }
+
+      if (devexMetrics.metrics?.pr_maturity) {
+        core.setOutput(
+          'pr-maturity-ratio',
+          devexMetrics.metrics.pr_maturity.maturity_ratio?.toString() || ''
+        )
+        core.setOutput(
+          'pr-maturity-percentage',
+          devexMetrics.metrics.pr_maturity.maturity_percentage?.toString() || ''
+        )
+        core.setOutput(
+          'pr-maturity-details',
+          JSON.stringify(devexMetrics.metrics.pr_maturity.details)
         )
       }
     }

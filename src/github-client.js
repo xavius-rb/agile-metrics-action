@@ -285,4 +285,54 @@ export class GitHubClient {
       return false
     }
   }
+
+  /**
+   * Get commits in a pull request
+   * @param {number} prNumber - Pull request number
+   * @returns {Promise<Array>} Array of commit objects or empty array if failed
+   */
+  async getPullRequestCommits(prNumber) {
+    try {
+      const response = await this.octokit.request(
+        'GET /repos/{owner}/{repo}/pulls/{pull_number}/commits',
+        {
+          owner: this.owner,
+          repo: this.repo,
+          pull_number: prNumber
+        }
+      )
+
+      return response.data
+    } catch (error) {
+      core.warning(`Failed to get PR commits ${prNumber}: ${error.message}`)
+      return []
+    }
+  }
+
+  /**
+   * Compare two commits to get the diff
+   * @param {string} base - Base commit SHA
+   * @param {string} head - Head commit SHA
+   * @returns {Promise<Object|null>} Comparison data or null if failed
+   */
+  async compareCommitsDiff(base, head) {
+    try {
+      const response = await this.octokit.request(
+        'GET /repos/{owner}/{repo}/compare/{base}...{head}',
+        {
+          owner: this.owner,
+          repo: this.repo,
+          base,
+          head
+        }
+      )
+
+      return response.data
+    } catch (error) {
+      core.warning(
+        `Failed to compare commits ${base}...${head}: ${error.message}`
+      )
+      return null
+    }
+  }
 }

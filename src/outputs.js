@@ -132,17 +132,36 @@ export class OutputManager {
 
       // Add DevEx metrics section if available
       const devexMetrics = metricsData.metrics?.devex
-      if (devexMetrics?.pr_size) {
-        const prSize = devexMetrics.pr_size
-        const emoji = this.getSizeEmoji(prSize.size)
+      if (devexMetrics?.pr_size || devexMetrics?.pr_maturity) {
         summary += `
-#### DevEx Metrics
+#### DevEx Metrics`
+
+        if (devexMetrics?.pr_size) {
+          const prSize = devexMetrics.pr_size
+          const emoji = this.getSizeEmoji(prSize.size)
+          summary += `
 - **PR Size:** ${emoji} ${prSize.size.toUpperCase()} (${prSize.category})
 - **Total Changes:** ${prSize.details.total_changes}
 - **Lines Added:** ${prSize.details.total_additions}
 - **Lines Removed:** ${prSize.details.total_deletions}
-- **Files Changed:** ${prSize.details.files_changed}
-        `
+- **Files Changed:** ${prSize.details.files_changed}`
+        }
+
+        if (devexMetrics?.pr_maturity) {
+          const maturity = devexMetrics.pr_maturity
+          const maturityEmoji = this.getMaturityEmoji(
+            maturity.maturity_percentage
+          )
+          summary += `
+- **PR Maturity:** ${maturityEmoji} ${maturity.maturity_percentage}% (${maturity.maturity_ratio})`
+
+          if (maturity.details && !maturity.details.error) {
+            summary += `
+- **Total Commits:** ${maturity.details.total_commits}
+- **Stable Changes:** ${maturity.details.stable_changes}
+- **Changes After Publication:** ${maturity.details.changes_after_publication}`
+          }
+        }
       }
 
       await core.summary.addRaw(summary).write()
@@ -166,6 +185,20 @@ export class OutputManager {
       xl: '🔥'
     }
     return emojiMap[size] || '❓'
+  }
+
+  /**
+   * Get emoji for PR maturity percentage
+   * @param {number} percentage - Maturity percentage (0-100)
+   * @returns {string} Emoji representation
+   */
+  getMaturityEmoji(percentage) {
+    if (percentage === null || percentage === undefined) return '❓'
+    if (percentage >= 90) return '🎯'
+    if (percentage >= 75) return '✅'
+    if (percentage >= 50) return '⚠️'
+    if (percentage >= 25) return '🚧'
+    return '❌'
   }
 
   /**

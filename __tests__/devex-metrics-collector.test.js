@@ -16,7 +16,9 @@ const mockGitHubClient = {
   getPullRequest: jest.fn(),
   getPullRequestFiles: jest.fn(),
   createPRComment: jest.fn(),
-  addPRLabel: jest.fn()
+  addPRLabel: jest.fn(),
+  getPullRequestCommits: jest.fn(),
+  compareCommitsDiff: jest.fn()
 }
 
 // Setup mocks
@@ -101,6 +103,55 @@ class TestDevExMetricsCollector {
       xl: '🔥'
     }
     return emojiMap[size] || '❓'
+  }
+
+  calculateDiffSize(files) {
+    let totalChanges = 0
+
+    files.forEach((file) => {
+      // Apply the same filtering logic as for PR size
+      if (this.options.filesToIgnore.length > 0) {
+        const shouldIgnore = this.options.filesToIgnore.some((pattern) => {
+          const regexPattern = pattern.replace(/\*/g, '.*').replace(/\?/g, '.')
+          const regex = new RegExp(`^${regexPattern}$`)
+          return regex.test(file.filename)
+        })
+
+        if (shouldIgnore) {
+          return
+        }
+      }
+
+      if (this.options.ignoreFileDeletions && file.status === 'removed') {
+        return
+      }
+
+      totalChanges += file.additions || 0
+
+      if (!this.options.ignoreLineDeletions) {
+        totalChanges += file.deletions || 0
+      }
+    })
+
+    return totalChanges
+  }
+
+  getMaturityEmoji(percentage) {
+    if (percentage === null || percentage === undefined) return '❓'
+    if (percentage >= 90) return '🎯'
+    if (percentage >= 75) return '✅'
+    if (percentage >= 50) return '⚠️'
+    if (percentage >= 25) return '🚧'
+    return '❌'
+  }
+
+  getMaturityLevel(percentage) {
+    if (percentage === null || percentage === undefined) return 'Unknown'
+    if (percentage >= 90) return 'Excellent'
+    if (percentage >= 75) return 'Good'
+    if (percentage >= 50) return 'Moderate'
+    if (percentage >= 25) return 'Poor'
+    return 'Very Poor'
   }
 }
 
@@ -264,6 +315,128 @@ describe('DevExMetricsCollector', () => {
       expect(collector.getSizeEmoji('l')).toBe('🔶')
       expect(collector.getSizeEmoji('xl')).toBe('🔥')
       expect(collector.getSizeEmoji('unknown')).toBe('❓')
+    })
+  })
+
+  describe('calculateDiffSize', () => {
+    it('should calculate diff size correctly', () => {
+      const files = [
+        {
+          filename: 'src/file1.js',
+          additions: 10,
+          deletions: 5
+        },
+        {
+          filename: 'src/file2.js',
+          additions: 20,
+          deletions: 3
+        }
+      ]
+
+      expect(collector.calculateDiffSize(files)).toBe(38) // 10+5+20+3
+    })
+
+    it('should ignore deletions when ignoreLineDeletions is true', () => {
+      const collectorIgnoreDeletions = new TestDevExMetricsCollector(
+        mockGitHubClient,
+        { ignoreLineDeletions: true }
+      )
+
+      const files = [
+        {
+          filename: 'src/file1.js',
+          additions: 10,
+          deletions: 5
+        }
+      ]
+
+      expect(collectorIgnoreDeletions.calculateDiffSize(files)).toBe(10)
+    })
+
+    it('should filter ignored files', () => {
+      const collectorWithFilters = new TestDevExMetricsCollector(
+        mockGitHubClient,
+        { filesToIgnore: ['*.md'] }
+      )
+
+      const files = [
+        {
+          filename: 'README.md',
+          additions: 10,
+          deletions: 5
+        },
+        {
+          filename: 'src/file.js',
+          additions: 20,
+          deletions: 3
+        }
+      ]
+
+      expect(collectorWithFilters.calculateDiffSize(files)).toBe(23) // Only src/file.js
+    })
+
+    it('should ignore deleted files when ignoreFileDeletions is true', () => {
+      const collectorIgnoreDeleted = new TestDevExMetricsCollector(
+        mockGitHubClient,
+        { ignoreFileDeletions: true }
+      )
+
+      const files = [
+        {
+          filename: 'src/file1.js',
+          status: 'removed',
+          additions: 0,
+          deletions: 10
+        },
+        {
+          filename: 'src/file2.js',
+          status: 'modified',
+          additions: 20,
+          deletions: 3
+        }
+      ]
+
+      expect(collectorIgnoreDeleted.calculateDiffSize(files)).toBe(23) // Only file2.js
+    })
+  })
+
+  describe('getMaturityEmoji', () => {
+    it('should return correct emojis for each maturity level', () => {
+      expect(collector.getMaturityEmoji(100)).toBe('🎯')
+      expect(collector.getMaturityEmoji(90)).toBe('🎯')
+      expect(collector.getMaturityEmoji(85)).toBe('✅')
+      expect(collector.getMaturityEmoji(75)).toBe('✅')
+      expect(collector.getMaturityEmoji(60)).toBe('⚠️')
+      expect(collector.getMaturityEmoji(50)).toBe('⚠️')
+      expect(collector.getMaturityEmoji(40)).toBe('🚧')
+      expect(collector.getMaturityEmoji(25)).toBe('🚧')
+      expect(collector.getMaturityEmoji(10)).toBe('❌')
+      expect(collector.getMaturityEmoji(0)).toBe('❌')
+    })
+
+    it('should handle null and undefined values', () => {
+      expect(collector.getMaturityEmoji(null)).toBe('❓')
+      expect(collector.getMaturityEmoji(undefined)).toBe('❓')
+    })
+  })
+
+  describe('getMaturityLevel', () => {
+    it('should return correct level descriptions', () => {
+      expect(collector.getMaturityLevel(100)).toBe('Excellent')
+      expect(collector.getMaturityLevel(90)).toBe('Excellent')
+      expect(collector.getMaturityLevel(85)).toBe('Good')
+      expect(collector.getMaturityLevel(75)).toBe('Good')
+      expect(collector.getMaturityLevel(60)).toBe('Moderate')
+      expect(collector.getMaturityLevel(50)).toBe('Moderate')
+      expect(collector.getMaturityLevel(40)).toBe('Poor')
+      expect(collector.getMaturityLevel(25)).toBe('Poor')
+      expect(collector.getMaturityLevel(10)).toBe('Very Poor')
+      expect(collector.getMaturityLevel(0)).toBe('Very Poor')
+    })
+
+    it('should handle null and undefined values', () => {
+      expect(collector.getMaturityLevel(null)).toBe('Unknown')
+      expect(collector.getMaturityLevel(undefined)).toBe('Unknown')
     })
   })
 })

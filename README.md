@@ -18,6 +18,7 @@ including:
 
 - **PR Size**: Automatic categorization of pull request size with labels and
   comments
+- **PR Maturity**: Ratio of stable code vs changes made after PR publication
 
 ## Features
 
@@ -33,8 +34,9 @@ including:
 
 - 🏷️ **PR Size Labeling**: Automatically adds size labels (size/xs, size/s,
   size/m, size/l, size/xl)
-- � **PR Comments**: Adds informative comments with detailed size breakdown
-- 🎯 **Smart Filtering**: Ignore specific files, line deletions, or file
+- 💬 **PR Comments**: Adds informative comments with detailed size breakdown
+- 🎯 **PR Maturity Analysis**: Measures code stability after PR publication
+- 🔍 **Smart Filtering**: Ignore specific files, line deletions, or file
   deletions
 - 📐 **Flexible Sizing**: Configurable thresholds for different project needs
 
@@ -185,11 +187,14 @@ jobs:
 
 ### DevEx Metrics Outputs
 
-| Output             | Description                                       |
-| ------------------ | ------------------------------------------------- |
-| `pr-size`          | PR size category (xs, s, m, l, xl)                |
-| `pr-size-category` | PR size category with prefix (size/xs, size/s...) |
-| `pr-size-details`  | Detailed PR size metrics as JSON string           |
+| Output                   | Description                                       |
+| ------------------------ | ------------------------------------------------- |
+| `pr-size`                | PR size category (xs, s, m, l, xl)                |
+| `pr-size-category`       | PR size category with prefix (size/xs, size/s...) |
+| `pr-size-details`        | Detailed PR size metrics as JSON string           |
+| `pr-maturity-ratio`      | PR maturity ratio (0.0 to 1.0)                    |
+| `pr-maturity-percentage` | PR maturity percentage (0 to 100)                 |
+| `pr-maturity-details`    | Detailed PR maturity metrics as JSON string       |
 
 ## Metrics Explained
 
@@ -231,6 +236,40 @@ Automatically categorizes pull requests based on the total number of changes
   `package-lock.json`)
 - `ignore-line-deletions`: Focus only on additions when appropriate
 - `ignore-file-deletions`: Exclude deleted files from size calculation
+
+#### PR Maturity
+
+Measures the stability of code when a pull request is initially published by
+calculating the ratio between stable changes (initial commit) and total changes
+added after publication.
+
+**Calculation:**
+
+- **Maturity Ratio**: `stable_changes / total_changes`
+- **Maturity Percentage**: Ratio converted to percentage (0-100%)
+
+**Maturity Levels:**
+
+- **🎯 Excellent (90-100%)**: Highly stable, minimal changes after publication
+- **✅ Good (75-89%)**: Generally stable with minor adjustments
+- **⚠️ Moderate (50-74%)**: Some instability, moderate changes after publication
+- **🚧 Poor (25-49%)**: Significant changes after publication
+- **❌ Very Poor (0-24%)**: Major instability, extensive changes after
+  publication
+
+**Benefits:**
+
+- Encourages better preparation before PR publication
+- Identifies patterns of incomplete or rushed development
+- Helps teams improve their development workflow
+- Provides insights into code quality and review processes
+
+**Use Cases:**
+
+- Track improvement in development practices over time
+- Identify developers who might need additional support
+- Measure the effectiveness of code review processes
+- Monitor the stability of feature development
 
 - **Elite**: On-demand (multiple deployments per day)
 - **High**: Between once per day and once per week

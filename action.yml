@@ -99,6 +99,15 @@ outputs:
   pr-size-details:
     description: 'Detailed PR size metrics as JSON string'
 
+  pr-maturity-ratio:
+    description: 'PR maturity ratio (0.0 to 1.0)'
+
+  pr-maturity-percentage:
+    description: 'PR maturity percentage (0 to 100)'
+
+  pr-maturity-details:
+    description: 'Detailed PR maturity metrics as JSON string'
+
 runs:
   using: node24
   main: dist/index.js

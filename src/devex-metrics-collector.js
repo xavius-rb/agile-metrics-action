@@ -39,10 +39,14 @@ export class DevExMetricsCollector {
       // Collect PR size metrics
       const prSizeMetrics = await this.calculatePRSize(prNumber)
 
+      // Collect PR maturity metrics
+      const prMaturityMetrics = await this.calculatePRMaturity(prNumber)
+
       return {
         pr_number: prNumber,
         metrics: {
-          pr_size: prSizeMetrics
+          pr_size: prSizeMetrics,
+          pr_maturity: prMaturityMetrics
         },
         timestamp: new Date().toISOString()
       }
@@ -203,29 +207,203 @@ export class DevExMetricsCollector {
   }
 
   /**
-   * Add PR comment with size information
+   * Calculate PR maturity metrics
+   * @param {number} prNumber - Pull request number
+   * @returns {Promise<Object>} PR maturity metrics
+   */
+  async calculatePRMaturity(prNumber) {
+    try {
+      const prDetails = await this.githubClient.getPullRequest(prNumber)
+      if (!prDetails) {
+        return {
+          maturity_ratio: null,
+          maturity_percentage: null,
+          details: {
+            error: 'Could not fetch PR details'
+          }
+        }
+      }
+
+      const prCommits = await this.githubClient.getPullRequestCommits(prNumber)
+      if (!prCommits || prCommits.length === 0) {
+        return {
+          maturity_ratio: null,
+          maturity_percentage: null,
+          details: {
+            error: 'No commits found in PR'
+          }
+        }
+      }
+
+      // Find the first commit (when PR was initially created/published)
+      const firstCommit = prCommits[0]
+      const lastCommit = prCommits[prCommits.length - 1]
+
+      // If there's only one commit, maturity is 100% (no changes after publication)
+      if (prCommits.length === 1) {
+        const prFiles = await this.githubClient.getPullRequestFiles(prNumber)
+        const filteredFiles = this.filterFiles(prFiles || [])
+        const sizeDetails = this.calculateSizeDetails(filteredFiles)
+
+        return {
+          maturity_ratio: 1.0,
+          maturity_percentage: 100,
+          details: {
+            total_commits: 1,
+            total_changes: sizeDetails.total_changes,
+            changes_after_publication: 0,
+            stable_changes: sizeDetails.total_changes,
+            first_commit_sha: firstCommit.sha,
+            last_commit_sha: lastCommit.sha
+          }
+        }
+      }
+
+      // Get the diff between the first commit and the final state
+      const totalDiff = await this.githubClient.compareCommitsDiff(
+        firstCommit.sha,
+        lastCommit.sha
+      )
+
+      if (!totalDiff) {
+        return {
+          maturity_ratio: null,
+          maturity_percentage: null,
+          details: {
+            error: 'Could not compare commits'
+          }
+        }
+      }
+
+      // Calculate total changes in the entire PR
+      const prFiles = await this.githubClient.getPullRequestFiles(prNumber)
+      const filteredFiles = this.filterFiles(prFiles || [])
+      const totalPRChanges = this.calculateSizeDetails(filteredFiles)
+
+      // Calculate changes made after the first commit (changes after publication)
+      const changesAfterPublication = this.calculateDiffSize(
+        totalDiff.files || []
+      )
+
+      // Calculate maturity ratio
+      const stableChanges = Math.max(
+        0,
+        totalPRChanges.total_changes - changesAfterPublication
+      )
+      const maturityRatio =
+        totalPRChanges.total_changes > 0
+          ? stableChanges / totalPRChanges.total_changes
+          : 1.0
+      const maturityPercentage = Math.round(maturityRatio * 100)
+
+      return {
+        maturity_ratio: Math.round(maturityRatio * 1000) / 1000, // Round to 3 decimal places
+        maturity_percentage: maturityPercentage,
+        details: {
+          total_commits: prCommits.length,
+          total_changes: totalPRChanges.total_changes,
+          changes_after_publication: changesAfterPublication,
+          stable_changes: stableChanges,
+          first_commit_sha: firstCommit.sha,
+          last_commit_sha: lastCommit.sha
+        }
+      }
+    } catch (error) {
+      core.warning(`Failed to calculate PR maturity: ${error.message}`)
+      return {
+        maturity_ratio: null,
+        maturity_percentage: null,
+        details: {
+          error: error.message
+        }
+      }
+    }
+  }
+
+  /**
+   * Calculate the size of changes in a diff
+   * @param {Array} files - Array of file diff objects
+   * @returns {number} Total number of changes
+   */
+  calculateDiffSize(files) {
+    let totalChanges = 0
+
+    files.forEach((file) => {
+      // Apply the same filtering logic as for PR size
+      if (this.options.filesToIgnore.length > 0) {
+        const shouldIgnore = this.options.filesToIgnore.some((pattern) => {
+          const regexPattern = pattern.replace(/\*/g, '.*').replace(/\?/g, '.')
+          const regex = new RegExp(`^${regexPattern}$`)
+          return regex.test(file.filename)
+        })
+
+        if (shouldIgnore) {
+          return
+        }
+      }
+
+      if (this.options.ignoreFileDeletions && file.status === 'removed') {
+        return
+      }
+
+      totalChanges += file.additions || 0
+
+      if (!this.options.ignoreLineDeletions) {
+        totalChanges += file.deletions || 0
+      }
+    })
+
+    return totalChanges
+  }
+
+  /**
+   * Add PR comment with size and maturity information
    * @param {number} prNumber - Pull request number
    * @param {Object} prSizeMetrics - PR size metrics
+   * @param {Object} prMaturityMetrics - PR maturity metrics (optional)
    * @returns {Promise<void>}
    */
-  async addPRComment(prNumber, prSizeMetrics) {
+  async addPRComment(prNumber, prSizeMetrics, prMaturityMetrics = null) {
     try {
       const { size, details } = prSizeMetrics
-      const emoji = this.getSizeEmoji(size)
+      const sizeEmoji = this.getSizeEmoji(size)
 
-      const comment = `## ${emoji} PR Size: ${size.toUpperCase()}
+      let comment = `## ${sizeEmoji} PR Size: ${size.toUpperCase()}
 
 This pull request has been automatically categorized as **${size}** based on the following metrics:
 
 - **Lines added:** ${details.total_additions}
 - **Lines removed:** ${details.total_deletions}
 - **Total changes:** ${details.total_changes}
-- **Files changed:** ${details.files_changed}
+- **Files changed:** ${details.files_changed}`
+
+      // Add PR maturity information if available
+      if (prMaturityMetrics && prMaturityMetrics.maturity_percentage !== null) {
+        const maturityEmoji = this.getMaturityEmoji(
+          prMaturityMetrics.maturity_percentage
+        )
+        const maturityLevel = this.getMaturityLevel(
+          prMaturityMetrics.maturity_percentage
+        )
+
+        comment += `
+
+## ${maturityEmoji} PR Maturity: ${prMaturityMetrics.maturity_percentage}%
+
+This pull request has a **${maturityLevel}** maturity rating based on code stability:
+
+- **Maturity ratio:** ${prMaturityMetrics.maturity_ratio}
+- **Total commits:** ${prMaturityMetrics.details?.total_commits || 'N/A'}
+- **Stable changes:** ${prMaturityMetrics.details?.stable_changes || 'N/A'}
+- **Changes after publication:** ${prMaturityMetrics.details?.changes_after_publication || 'N/A'}`
+      }
+
+      comment += `
 
 *This comment was generated automatically by the Agile Metrics Action.*`
 
       await this.githubClient.createPRComment(prNumber, comment)
-      core.info(`Added size comment to PR #${prNumber}`)
+      core.info(`Added DevEx comment to PR #${prNumber}`)
     } catch (error) {
       core.warning(`Failed to add PR comment: ${error.message}`)
     }
@@ -260,5 +438,33 @@ This pull request has been automatically categorized as **${size}** based on the
       xl: '🔥'
     }
     return emojiMap[size] || '❓'
+  }
+
+  /**
+   * Get emoji for PR maturity percentage
+   * @param {number} percentage - Maturity percentage (0-100)
+   * @returns {string} Emoji representation
+   */
+  getMaturityEmoji(percentage) {
+    if (percentage === null || percentage === undefined) return '❓'
+    if (percentage >= 90) return '🎯'
+    if (percentage >= 75) return '✅'
+    if (percentage >= 50) return '⚠️'
+    if (percentage >= 25) return '🚧'
+    return '❌'
+  }
+
+  /**
+   * Get maturity level description
+   * @param {number} percentage - Maturity percentage (0-100)
+   * @returns {string} Maturity level description
+   */
+  getMaturityLevel(percentage) {
+    if (percentage === null || percentage === undefined) return 'Unknown'
+    if (percentage >= 90) return 'Excellent'
+    if (percentage >= 75) return 'Good'
+    if (percentage >= 50) return 'Moderate'
+    if (percentage >= 25) return 'Poor'
+    return 'Very Poor'
   }
 }

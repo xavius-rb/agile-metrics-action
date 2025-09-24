@@ -31527,6 +31527,56 @@ class GitHubClient {
       return false
     }
   }
+
+  /**
+   * Get commits in a pull request
+   * @param {number} prNumber - Pull request number
+   * @returns {Promise<Array>} Array of commit objects or empty array if failed
+   */
+  async getPullRequestCommits(prNumber) {
+    try {
+      const response = await this.octokit.request(
+        'GET /repos/{owner}/{repo}/pulls/{pull_number}/commits',
+        {
+          owner: this.owner,
+          repo: this.repo,
+          pull_number: prNumber
+        }
+      );
+
+      return response.data
+    } catch (error) {
+      coreExports.warning(`Failed to get PR commits ${prNumber}: ${error.message}`);
+      return []
+    }
+  }
+
+  /**
+   * Compare two commits to get the diff
+   * @param {string} base - Base commit SHA
+   * @param {string} head - Head commit SHA
+   * @returns {Promise<Object|null>} Comparison data or null if failed
+   */
+  async compareCommitsDiff(base, head) {
+    try {
+      const response = await this.octokit.request(
+        'GET /repos/{owner}/{repo}/compare/{base}...{head}',
+        {
+          owner: this.owner,
+          repo: this.repo,
+          base,
+          head
+        }
+      );
+
+      return response.data
+    } catch (error) {
+      coreExports.warning(
+        `Failed to compare commits ${base}...${head}: ${error.message}`
+      );
+      return null
+    }
+  }
 }
 
 /**
@@ -31918,10 +31968,14 @@ class DevExMetricsCollector {
       // Collect PR size metrics
       const prSizeMetrics = await this.calculatePRSize(prNumber);
 
+      // Collect PR maturity metrics
+      const prMaturityMetrics = await this.calculatePRMaturity(prNumber);
+
       return {
         pr_number: prNumber,
         metrics: {
-          pr_size: prSizeMetrics
+          pr_size: prSizeMetrics,
+          pr_maturity: prMaturityMetrics
         },
         timestamp: new Date().toISOString()
       }
@@ -32079,6 +32133,156 @@ class DevExMetricsCollector {
     if (total_changes <= 200) return 'm'
     if (total_changes <= 500) return 'l'
     return 'xl'
+  }
+
+  /**
+   * Calculate PR maturity metrics
+   * @param {number} prNumber - Pull request number
+   * @returns {Promise<Object>} PR maturity metrics
+   */
+  async calculatePRMaturity(prNumber) {
+    try {
+      const prDetails = await this.githubClient.getPullRequest(prNumber);
+      if (!prDetails) {
+        return {
+          maturity_ratio: null,
+          maturity_percentage: null,
+          details: {
+            error: 'Could not fetch PR details'
+          }
+        }
+      }
+
+      const prCommits = await this.githubClient.getPullRequestCommits(prNumber);
+      if (!prCommits || prCommits.length === 0) {
+        return {
+          maturity_ratio: null,
+          maturity_percentage: null,
+          details: {
+            error: 'No commits found in PR'
+          }
+        }
+      }
+
+      // Find the first commit (when PR was initially created/published)
+      const firstCommit = prCommits[0];
+      const lastCommit = prCommits[prCommits.length - 1];
+
+      // If there's only one commit, maturity is 100% (no changes after publication)
+      if (prCommits.length === 1) {
+        const prFiles = await this.githubClient.getPullRequestFiles(prNumber);
+        const filteredFiles = this.filterFiles(prFiles || []);
+        const sizeDetails = this.calculateSizeDetails(filteredFiles);
+
+        return {
+          maturity_ratio: 1.0,
+          maturity_percentage: 100,
+          details: {
+            total_commits: 1,
+            total_changes: sizeDetails.total_changes,
+            changes_after_publication: 0,
+            stable_changes: sizeDetails.total_changes,
+            first_commit_sha: firstCommit.sha,
+            last_commit_sha: lastCommit.sha
+          }
+        }
+      }
+
+      // Get the diff between the first commit and the final state
+      const totalDiff = await this.githubClient.compareCommitsDiff(
+        firstCommit.sha,
+        lastCommit.sha
+      );
+
+      if (!totalDiff) {
+        return {
+          maturity_ratio: null,
+          maturity_percentage: null,
+          details: {
+            error: 'Could not compare commits'
+          }
+        }
+      }
+
+      // Calculate total changes in the entire PR
+      const prFiles = await this.githubClient.getPullRequestFiles(prNumber);
+      const filteredFiles = this.filterFiles(prFiles || []);
+      const totalPRChanges = this.calculateSizeDetails(filteredFiles);
+
+      // Calculate changes made after the first commit (changes after publication)
+      const changesAfterPublication = this.calculateDiffSize(
+        totalDiff.files || []
+      );
+
+      // Calculate maturity ratio
+      const stableChanges = Math.max(
+        0,
+        totalPRChanges.total_changes - changesAfterPublication
+      );
+      const maturityRatio =
+        totalPRChanges.total_changes > 0
+          ? stableChanges / totalPRChanges.total_changes
+          : 1.0;
+      const maturityPercentage = Math.round(maturityRatio * 100);
+
+      return {
+        maturity_ratio: Math.round(maturityRatio * 1000) / 1000, // Round to 3 decimal places
+        maturity_percentage: maturityPercentage,
+        details: {
+          total_commits: prCommits.length,
+          total_changes: totalPRChanges.total_changes,
+          changes_after_publication: changesAfterPublication,
+          stable_changes: stableChanges,
+          first_commit_sha: firstCommit.sha,
+          last_commit_sha: lastCommit.sha
+        }
+      }
+    } catch (error) {
+      coreExports.warning(`Failed to calculate PR maturity: ${error.message}`);
+      return {
+        maturity_ratio: null,
+        maturity_percentage: null,
+        details: {
+          error: error.message
+        }
+      }
+    }
+  }
+
+  /**
+   * Calculate the size of changes in a diff
+   * @param {Array} files - Array of file diff objects
+   * @returns {number} Total number of changes
+   */
+  calculateDiffSize(files) {
+    let totalChanges = 0;
+
+    files.forEach((file) => {
+      // Apply the same filtering logic as for PR size
+      if (this.options.filesToIgnore.length > 0) {
+        const shouldIgnore = this.options.filesToIgnore.some((pattern) => {
+          const regexPattern = pattern.replace(/\*/g, '.*').replace(/\?/g, '.');
+          const regex = new RegExp(`^${regexPattern}$`);
+          return regex.test(file.filename)
+        });
+
+        if (shouldIgnore) {
+          return
+        }
+      }
+
+      if (this.options.ignoreFileDeletions && file.status === 'removed') {
+        return
+      }
+
+      totalChanges += file.additions || 0;
+
+      if (!this.options.ignoreLineDeletions) {
+        totalChanges += file.deletions || 0;
+      }
+    });
+
+    return totalChanges
   }
 
   /**
@@ -32274,17 +32478,36 @@ class OutputManager {
 
       // Add DevEx metrics section if available
       const devexMetrics = metricsData.metrics?.devex;
-      if (devexMetrics?.pr_size) {
-        const prSize = devexMetrics.pr_size;
-        const emoji = this.getSizeEmoji(prSize.size);
+      if (devexMetrics?.pr_size || devexMetrics?.pr_maturity) {
         summary += `
-#### DevEx Metrics
+#### DevEx Metrics`;
+
+        if (devexMetrics?.pr_size) {
+          const prSize = devexMetrics.pr_size;
+          const emoji = this.getSizeEmoji(prSize.size);
+          summary += `
 - **PR Size:** ${emoji} ${prSize.size.toUpperCase()} (${prSize.category})
 - **Total Changes:** ${prSize.details.total_changes}
 - **Lines Added:** ${prSize.details.total_additions}
 - **Lines Removed:** ${prSize.details.total_deletions}
-- **Files Changed:** ${prSize.details.files_changed}
-        `;
+- **Files Changed:** ${prSize.details.files_changed}`;
+        }
+
+        if (devexMetrics?.pr_maturity) {
+          const maturity = devexMetrics.pr_maturity;
+          const maturityEmoji = this.getMaturityEmoji(
+            maturity.maturity_percentage
+          );
+          summary += `
+- **PR Maturity:** ${maturityEmoji} ${maturity.maturity_percentage}% (${maturity.maturity_ratio})`;
+
+          if (maturity.details && !maturity.details.error) {
+            summary += `
+- **Total Commits:** ${maturity.details.total_commits}
+- **Stable Changes:** ${maturity.details.stable_changes}
+- **Changes After Publication:** ${maturity.details.changes_after_publication}`;
+          }
+        }
       }
 
       await coreExports.summary.addRaw(summary).write();
@@ -32308,6 +32531,20 @@ class OutputManager {
       xl: '🔥'
     };
     return emojiMap[size] || '❓'
+  }
+
+  /**
+   * Get emoji for PR maturity percentage
+   * @param {number} percentage - Maturity percentage (0-100)
+   * @returns {string} Emoji representation
+   */
+  getMaturityEmoji(percentage) {
+    if (percentage === null || percentage === undefined) return '❓'
+    if (percentage >= 90) return '🎯'
+    if (percentage >= 75) return '✅'
+    if (percentage >= 50) return '⚠️'
+    if (percentage >= 25) return '🚧'
+    return '❌'
   }
 
   /**
@@ -32490,6 +32727,21 @@ async function run() {
         coreExports.setOutput(
           'pr-size-details',
           JSON.stringify(devexMetrics.metrics.pr_size.details)
+        );
+      }
+
+      if (devexMetrics.metrics?.pr_maturity) {
+        coreExports.setOutput(
+          'pr-maturity-ratio',
+          devexMetrics.metrics.pr_maturity.maturity_ratio?.toString() || ''
+        );
+        coreExports.setOutput(
+          'pr-maturity-percentage',
+          devexMetrics.metrics.pr_maturity.maturity_percentage?.toString() || ''
+        );
+        coreExports.setOutput(
+          'pr-maturity-details',
+          JSON.stringify(devexMetrics.metrics.pr_maturity.details)
         );
       }
     }
