@@ -57,8 +57,11 @@ jobs:
         id: test-action
         uses: ./
         with:
-          milliseconds: 2000
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          deployment-frequency: 'true'
+          commit-results: 'false'
 
       - name: Print Output
         id: output
-        run: echo "${{ steps.test-action.outputs.time }}"
+        run: |
+          echo "Deployment frequency: ${{ steps.test-action.outputs.deployment-frequency }} days"

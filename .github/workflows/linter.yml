@@ -55,3 +55,8 @@ jobs:
           VALIDATE_JSCPD: false
           VALIDATE_TYPESCRIPT_ES: false
           VALIDATE_JSON: false
+          VALIDATE_CHECKOV: false
+          VALIDATE_BIOME_FORMAT: false
+          VALIDATE_BIOME_LINT: false
+          MARKDOWN_CONFIG_FILE: .markdown-lint.yml
+          VALIDATE_NATURAL_LANGUAGE: false

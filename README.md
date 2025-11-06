@@ -179,7 +179,8 @@ jobs:
 
 - name: Use Metrics
   run: |
-    echo "Deployment frequency: ${{ steps.metrics.outputs.deployment-frequency }} days"
+    echo "Deployment frequency: \
+      ${{ steps.metrics.outputs.deployment-frequency }} days"
     echo "Average lead time: ${{ steps.metrics.outputs.lead-time-avg }} hours"
     echo "PR size: ${{ steps.metrics.outputs.pr-size }}"
     echo "PR maturity: ${{ steps.metrics.outputs.pr-maturity-percentage }}%"
@@ -329,34 +330,17 @@ added after publication.
 - Measure the effectiveness of code review processes
 - Monitor the stability of feature development
 
-- **Elite**: On-demand (multiple deployments per day)
-- **High**: Between once per day and once per week
-- **Medium**: Between once per week and once per month
-- **Low**: Fewer than once per month
-
-### Lead Time for Change
-
-Measures the time from when code is committed to when it's successfully running
-in production.
-
-- **Average**: Mean time across all commits in the release
-- **Oldest**: The commit that took the longest time to deploy
-- **Newest**: The most recent commit (excludes merge commits by default)
-
-The action analyzes commits between releases/tags and calculates the time from
-commit timestamp to release timestamp.
-
 ## How It Works
 
 1. **Data Source Detection**: The action first looks for GitHub releases, then
    falls back to tags if no releases are found
-2. **Release Analysis**: Compares the latest and previous releases/tags to
+1. **Release Analysis**: Compares the latest and previous releases/tags to
    calculate deployment frequency
-3. **Commit Analysis**: Examines all commits between releases to calculate lead
+1. **Commit Analysis**: Examines all commits between releases to calculate lead
    time metrics
-4. **Output Generation**: Creates JSON file, sets GitHub Actions outputs, and
+1. **Output Generation**: Creates JSON file, sets GitHub Actions outputs, and
    generates markdown summary
-5. **Optional Commit**: Can commit the metrics file back to the repository for
+1. **Optional Commit**: Can commit the metrics file back to the repository for
    tracking over time
 
 ## Output Format
@@ -398,9 +382,9 @@ The action generates a comprehensive JSON file with the following structure:
 ## Contributing
 
 1. Install dependencies: `npm install`
-2. Run tests: `npm test`
-3. Bundle the action: `npm run bundle`
-4. Create a pull request
+1. Run tests: `npm test`
+1. Bundle the action: `npm run bundle`
+1. Create a pull request
 
 ## License
 
@@ -437,15 +421,15 @@ replaced with individual metric toggles.
 
 **Key Changes:**
 
-- `enable-dora-metrics: 'true'` → `deployment-frequency: 'true'` +
-  `lead-time: 'true'`
-- `enable-devex-metrics: 'true'` → `pr-size: 'true'` + `pr-maturity: 'true'`
-- By default, **all metrics are now disabled** (changed from v1 where DORA
-  metrics were enabled by default)
-- You must explicitly enable each metric you want to collect
+1. `enable-dora-metrics: 'true'` → `deployment-frequency: 'true'` +
+   `lead-time: 'true'`
+1. `enable-devex-metrics: 'true'` → `pr-size: 'true'` + `pr-maturity: 'true'`
+1. By default, **all metrics are now disabled** (changed from v1 where DORA
+   metrics were enabled by default)
+1. You must explicitly enable each metric you want to collect
 
 **Benefits:**
 
-- Fine-grained control over which metrics to collect
-- Reduced API calls and processing time when you only need specific metrics
-- More flexible for different use cases and workflows
+1. Fine-grained control over which metrics to collect
+1. Reduced API calls and processing time when you only need specific metrics
+1. More flexible for different use cases and workflows
