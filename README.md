@@ -276,11 +276,10 @@ identify bottlenecks in your delivery pipeline.
 Automatically categorizes pull requests based on the total number of changes
 (additions + deletions):
 
-- **XS (🤏)**: ≤ 10 changes - Quick fixes, small tweaks
-- **S (🔹)**: 11-50 changes - Small features, bug fixes
-- **M (🔸)**: 51-200 changes - Medium features, refactoring
-- **L (🔶)**: 201-500 changes - Large features, significant changes
-- **XL (🔥)**: > 500 changes - Major refactoring, multiple features
+- **S (🔹)**: < 105 changes - Small features, bug fixes
+- **M (🔸)**: 106-160 changes - Medium features, refactoring
+- **L (🔶)**: 161-240 changes - Large features, significant changes
+- **XL (🔥)**: > 240 changes - Major refactoring, multiple features
 
 **Benefits:**
 

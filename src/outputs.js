@@ -178,7 +178,6 @@ export class OutputManager {
    */
   getSizeEmoji(size) {
     const emojiMap = {
-      xs: '🤏',
       s: '🔹',
       m: '🔸',
       l: '🔶',

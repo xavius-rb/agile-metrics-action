@@ -202,16 +202,15 @@ export class DevExMetricsCollector {
   /**
    * Categorize PR size based on change metrics
    * @param {Object} sizeDetails - Size details object
-   * @returns {string} Size category (xs, s, m, l, xl)
+   * @returns {string} Size category (s, m, l, xl)
    */
   categorizePRSize(sizeDetails) {
     const { total_changes } = sizeDetails
 
     // Define size thresholds based on common PR size conventions
-    if (total_changes <= 10) return 'xs'
-    if (total_changes <= 50) return 's'
-    if (total_changes <= 200) return 'm'
-    if (total_changes <= 500) return 'l'
+    if (total_changes < 105) return 's'
+    if (total_changes <= 160) return 'm'
+    if (total_changes <= 240) return 'l'
     return 'xl'
   }
 
@@ -570,7 +569,6 @@ This pull request has a **${maturityLevel}** maturity rating based on code stabi
    */
   getSizeEmoji(size) {
     const emojiMap = {
-      xs: '🤏',
       s: '🔹',
       m: '🔸',
       l: '🔶',
