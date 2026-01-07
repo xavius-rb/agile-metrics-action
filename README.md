@@ -308,12 +308,10 @@ added after publication.
 
 **Maturity Levels:**
 
-- **🎯 Excellent (90-100%)**: Highly stable, minimal changes after publication
-- **✅ Good (75-89%)**: Generally stable with minor adjustments
-- **⚠️ Moderate (50-74%)**: Some instability, moderate changes after publication
-- **🚧 Poor (25-49%)**: Significant changes after publication
-- **❌ Very Poor (0-24%)**: Major instability, extensive changes after
-  publication
+- **⭐ Elite (>88%)**: Highest stability, minimal changes after publication
+- **✅ Good (81-87%)**: Strong stability with minor adjustments
+- **⚖️ Fair (75-80%)**: Moderate stability, some adjustments needed
+- **🎯 Needs Focus (<75%)**: Significant changes after publication
 
 **Benefits:**
 

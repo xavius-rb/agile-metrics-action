@@ -32522,11 +32522,10 @@ This pull request has a **${maturityLevel}** maturity rating based on code stabi
    */
   getMaturityEmoji(percentage) {
     if (percentage === null || percentage === undefined) return '❓'
-    if (percentage >= 90) return '🎯'
-    if (percentage >= 75) return '✅'
-    if (percentage >= 50) return '⚠️'
-    if (percentage >= 25) return '🚧'
-    return '❌'
+    if (percentage > 88) return '⭐'
+    if (percentage >= 81) return '✅'
+    if (percentage >= 75) return '⚖️'
+    return '🎯'
   }
 
   /**
@@ -32536,11 +32535,10 @@ This pull request has a **${maturityLevel}** maturity rating based on code stabi
    */
   getMaturityLevel(percentage) {
     if (percentage === null || percentage === undefined) return 'Unknown'
-    if (percentage >= 90) return 'Excellent'
-    if (percentage >= 75) return 'Good'
-    if (percentage >= 50) return 'Moderate'
-    if (percentage >= 25) return 'Poor'
-    return 'Very Poor'
+    if (percentage > 88) return 'Elite'
+    if (percentage >= 81) return 'Good'
+    if (percentage >= 75) return 'Fair'
+    return 'Needs Focus'
   }
 }
 
@@ -32737,11 +32735,10 @@ class OutputManager {
    */
   getMaturityEmoji(percentage) {
     if (percentage === null || percentage === undefined) return '❓'
-    if (percentage >= 90) return '🎯'
-    if (percentage >= 75) return '✅'
-    if (percentage >= 50) return '⚠️'
-    if (percentage >= 25) return '🚧'
-    return '❌'
+    if (percentage > 88) return '⭐'
+    if (percentage >= 81) return '✅'
+    if (percentage >= 75) return '⚖️'
+    return '🎯'
   }
 
   /**
