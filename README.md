@@ -20,6 +20,13 @@ including:
   comments
 - **PR Maturity**: Ratio of stable code vs changes made after PR publication
 
+**Team Metrics:**
+
+- **Pickup Time**: Time from PR creation to first review
+- **Approve Time**: Time from first comment to approval
+- **Merge Time**: Time from approval to merge
+- **Merge Frequency**: Number of PRs merged per developer per week
+
 ## Features
 
 **DORA Metrics:**
@@ -39,6 +46,15 @@ including:
 - 🔍 **Smart Filtering**: Ignore specific files, line deletions, or file
   deletions
 - 📐 **Flexible Sizing**: Configurable thresholds for different project needs
+
+**Team Metrics:**
+
+- 📊 **Aggregate Analytics**: Team-wide metrics across multiple PRs over time
+- ⏱️ **Time Tracking**: Pickup, approve, and merge time measurements
+- 🚀 **Velocity Insights**: Merge frequency per developer metrics
+- 📈 **Trend Analysis**: Weekly, fortnightly, or monthly reporting periods
+- 🎯 **Performance Ratings**: Elite/Good/Fair/Needs Focus classifications
+- 📝 **Rich Reports**: Markdown reports with statistics and visualizations
 
 **General:**
 
@@ -71,7 +87,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Collect Deployment Frequency
-        uses: xavius-rb/agile-metrics-action@v2
+        uses: xavius-rb/agile-metrics-action@v3
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           deployment-frequency: 'true'
@@ -94,7 +110,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Collect Lead Time
-        uses: xavius-rb/agile-metrics-action@v2
+        uses: xavius-rb/agile-metrics-action@v3
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           lead-time: 'true'
@@ -116,7 +132,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Analyze PR Size
-        uses: xavius-rb/agile-metrics-action@v2
+        uses: xavius-rb/agile-metrics-action@v3
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           pr-size: 'true'
@@ -140,7 +156,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Analyze PR Maturity
-        uses: xavius-rb/agile-metrics-action@v2
+        uses: xavius-rb/agile-metrics-action@v3
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           pr-maturity: 'true'
@@ -148,42 +164,29 @@ jobs:
 
 ### Advanced Configuration
 
-#### Combined Metrics
+#### Team Metrics
 
 ```yaml
-- name: Collect All Metrics
-  id: metrics
-  uses: xavius-rb/agile-metrics-action@v2
-  with:
-    github-token: ${{ secrets.GITHUB_TOKEN }}
+name: Collect Team Metrics
 
-    # Output configuration
-    output-path: 'reports/metrics.json'
-    commit-results: 'false'
+on:
+  schedule:
+    - cron: '0 9 * * 1' # Every Monday at 9 AM UTC
+  workflow_dispatch:
 
-    # Enable specific metrics
-    deployment-frequency: 'true'
-    lead-time: 'true'
-    pr-size: 'true'
-    pr-maturity: 'true'
+jobs:
+  team-metrics:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-    # DORA configuration (applies to deployment-frequency and lead-time)
-    include-merge-commits: 'true'
-    max-releases: '50'
-    max-tags: '100'
-
-    # DevEx configuration (applies to pr-size and pr-maturity)
-    files-to-ignore: '*.md,*.txt,package-lock.json,yarn.lock'
-    ignore-line-deletions: 'false'
-    ignore-file-deletions: 'true'
-
-- name: Use Metrics
-  run: |
-    echo "Deployment frequency: \
-      ${{ steps.metrics.outputs.deployment-frequency }} days"
-    echo "Average lead time: ${{ steps.metrics.outputs.lead-time-avg }} hours"
-    echo "PR size: ${{ steps.metrics.outputs.pr-size }}"
-    echo "PR maturity: ${{ steps.metrics.outputs.pr-maturity-percentage }}%"
+      - name: Collect Team Metrics
+        uses: xavius-rb/agile-metrics-action@v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          team-metrics: 'true'
+          time-period: 'weekly' # Options: weekly, fortnightly, monthly
+          team-metrics-output-path: 'reports/team_metrics.md'
 ```
 
 ## Inputs
@@ -204,6 +207,16 @@ jobs:
 | `lead-time`            | Whether to enable lead time for change metric | ❌       | `false` |
 | `pr-size`              | Whether to enable PR size metric              | ❌       | `false` |
 | `pr-maturity`          | Whether to enable PR maturity metric          | ❌       | `false` |
+| `team-metrics`         | Whether to enable team metrics                | ❌       | `false` |
+
+### Team Metrics Configuration
+
+Applies to `team-metrics` metric.
+
+| Input                      | Description                                             | Required | Default                          |
+| -------------------------- | ------------------------------------------------------- | -------- | -------------------------------- |
+| `time-period`              | Time period for analysis (weekly, fortnightly, monthly) | ❌       | `weekly`                         |
+| `team-metrics-output-path` | Path where team metrics markdown report will be saved   | ❌       | `metrics/team_metrics_report.md` |
 
 ### DORA Metrics Configuration
 
@@ -255,6 +268,13 @@ Applies to `pr-size` and `pr-maturity` metrics.
 | `pr-maturity-percentage` | PR maturity percentage (0 to 100)                 |
 | `pr-maturity-details`    | Detailed PR maturity metrics as JSON string       |
 
+### Team Metrics Outputs
+
+| Output                     | Description                                      |
+| -------------------------- | ------------------------------------------------ |
+| `team-metrics-json`        | Complete team metrics data as JSON string        |
+| `team-metrics-report-path` | Path to the generated team metrics markdown file |
+
 ## Metrics Explained
 
 ### DORA Metrics
@@ -276,11 +296,10 @@ identify bottlenecks in your delivery pipeline.
 Automatically categorizes pull requests based on the total number of changes
 (additions + deletions):
 
-- **XS (🤏)**: ≤ 10 changes - Quick fixes, small tweaks
-- **S (🔹)**: 11-50 changes - Small features, bug fixes
-- **M (🔸)**: 51-200 changes - Medium features, refactoring
-- **L (🔶)**: 201-500 changes - Large features, significant changes
-- **XL (🔥)**: > 500 changes - Major refactoring, multiple features
+- **S (🔹)**: < 105 changes - Small features, bug fixes
+- **M (🔸)**: 106-160 changes - Medium features, refactoring
+- **L (🔶)**: 161-240 changes - Large features, significant changes
+- **XL (🔥)**: > 240 changes - Major refactoring, multiple features
 
 **Benefits:**
 
@@ -309,12 +328,10 @@ added after publication.
 
 **Maturity Levels:**
 
-- **🎯 Excellent (90-100%)**: Highly stable, minimal changes after publication
-- **✅ Good (75-89%)**: Generally stable with minor adjustments
-- **⚠️ Moderate (50-74%)**: Some instability, moderate changes after publication
-- **🚧 Poor (25-49%)**: Significant changes after publication
-- **❌ Very Poor (0-24%)**: Major instability, extensive changes after
-  publication
+- **⭐ Elite (>88%)**: Highest stability, minimal changes after publication
+- **✅ Good (81-87%)**: Strong stability with minor adjustments
+- **⚖️ Fair (75-80%)**: Moderate stability, some adjustments needed
+- **🎯 Needs Focus (<75%)**: Significant changes after publication
 
 **Benefits:**
 
@@ -330,6 +347,50 @@ added after publication.
 - Measure the effectiveness of code review processes
 - Monitor the stability of feature development
 
+#### Team Metrics
+
+Team metrics provide aggregated insights across multiple PRs over a specified
+time period, helping teams understand their development velocity and quality
+patterns.
+
+**Metrics Collected:**
+
+- **Pickup Time**: Time from PR creation to first review activity
+- **Approve Time**: Time from first comment to first approval
+- **Merge Time**: Time from first approval to merge
+- **Merge Frequency**: Number of merged PRs per developer per week
+
+**Time Periods:**
+
+- **Weekly**: Last 7 days
+- **Fortnightly**: Last 14 days
+- **Monthly**: Last 30 days
+
+**Rating Levels:**
+
+All time-based metrics are rated on the same 4-level scale:
+
+| Level              | Pickup Time | Approve Time | Merge Time | Merge Frequency      |
+| ------------------ | ----------- | ------------ | ---------- | -------------------- |
+| ⭐ **Elite**       | < 2 hours   | < 17 hours   | < 2 hours  | > 1.6 PRs/dev/week   |
+| ✅ **Good**        | 2-6 hours   | 17-24 hours  | 2-5 hours  | 1.1-1.6 PRs/dev/week |
+| ⚖️ **Fair**        | 7-16 hours  | 25-45 hours  | 6-19 hours | 0.6-1.0 PRs/dev/week |
+| 🎯 **Needs Focus** | > 16 hours  | > 45 hours   | > 19 hours | < 0.6 PRs/dev/week   |
+
+**Outputs:**
+
+- JSON data with all metrics and per-PR details
+- Markdown report with statistics and ratings
+- GitHub Actions summary for immediate visibility
+
+**Benefits:**
+
+- Identifies bottlenecks in the review process
+- Tracks team velocity and throughput
+- Measures code review effectiveness
+- Highlights areas for process improvement
+- Provides data-driven insights for retrospectives
+
 ## How It Works
 
 1. **Data Source Detection**: The action first looks for GitHub releases, then
@@ -337,7 +398,7 @@ added after publication.
 1. **Release Analysis**: Compares the latest and previous releases/tags to
    calculate deployment frequency
 1. **Commit Analysis**: Examines all commits between releases to calculate lead
-   time metrics
+   time for changes
 1. **Output Generation**: Creates JSON file, sets GitHub Actions outputs, and
    generates markdown summary
 1. **Optional Commit**: Can commit the metrics file back to the repository for
@@ -393,21 +454,6 @@ for details.
 
 ## Migration Guide
 
-### Upgrading from v1 to v2
-
-Version 2.0.0 introduces a **breaking change** in how metrics are enabled. The
-high-level `enable-dora-metrics` and `enable-devex-metrics` inputs have been
-replaced with individual metric toggles.
-
-#### v1.x Configuration
-
-```yaml
-- uses: xavius-rb/agile-metrics-action@v1
-  with:
-    enable-dora-metrics: 'true'
-    enable-devex-metrics: 'true'
-```
-
 #### v2.x Configuration
 
 ```yaml
@@ -419,17 +465,14 @@ replaced with individual metric toggles.
     pr-maturity: 'true'
 ```
 
-**Key Changes:**
+#### v3.x Configuration
 
-1. `enable-dora-metrics: 'true'` → `deployment-frequency: 'true'` +
-   `lead-time: 'true'`
-1. `enable-devex-metrics: 'true'` → `pr-size: 'true'` + `pr-maturity: 'true'`
-1. By default, **all metrics are now disabled** (changed from v1 where DORA
-   metrics were enabled by default)
-1. You must explicitly enable each metric you want to collect
+Added `team-metrics`, `time-period` and `team-metrics-output-path`.
 
-**Benefits:**
-
-1. Fine-grained control over which metrics to collect
-1. Reduced API calls and processing time when you only need specific metrics
-1. More flexible for different use cases and workflows
+```yaml
+- uses: xavius-rb/agile-metrics-action@v3
+  with:
+    team-metrics: 'true'
+    time-period: ${{ inputs.time-period || 'monthly' }}
+    team-metrics-output-path: reports/team_metrics.md
+```

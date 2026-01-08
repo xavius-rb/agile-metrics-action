@@ -87,16 +87,14 @@ class TestDevExMetricsCollector {
   categorizePRSize(sizeDetails) {
     const { total_changes } = sizeDetails
 
-    if (total_changes <= 10) return 'xs'
-    if (total_changes <= 50) return 's'
-    if (total_changes <= 200) return 'm'
-    if (total_changes <= 500) return 'l'
+    if (total_changes < 105) return 's'
+    if (total_changes <= 160) return 'm'
+    if (total_changes <= 240) return 'l'
     return 'xl'
   }
 
   getSizeEmoji(size) {
     const emojiMap = {
-      xs: '🤏',
       s: '🔹',
       m: '🔸',
       l: '🔶',
@@ -138,20 +136,18 @@ class TestDevExMetricsCollector {
 
   getMaturityEmoji(percentage) {
     if (percentage === null || percentage === undefined) return '❓'
-    if (percentage >= 90) return '🎯'
-    if (percentage >= 75) return '✅'
-    if (percentage >= 50) return '⚠️'
-    if (percentage >= 25) return '🚧'
-    return '❌'
+    if (percentage > 88) return '⭐'
+    if (percentage >= 81) return '✅'
+    if (percentage >= 75) return '⚖️'
+    return '🎯'
   }
 
   getMaturityLevel(percentage) {
     if (percentage === null || percentage === undefined) return 'Unknown'
-    if (percentage >= 90) return 'Excellent'
-    if (percentage >= 75) return 'Good'
-    if (percentage >= 50) return 'Moderate'
-    if (percentage >= 25) return 'Poor'
-    return 'Very Poor'
+    if (percentage > 88) return 'Elite'
+    if (percentage >= 81) return 'Good'
+    if (percentage >= 75) return 'Fair'
+    return 'Needs Focus'
   }
 }
 
@@ -281,35 +277,29 @@ describe('DevExMetricsCollector', () => {
   })
 
   describe('categorizePRSize', () => {
-    it('should categorize XS (≤10 changes)', () => {
-      expect(collector.categorizePRSize({ total_changes: 5 })).toBe('xs')
-      expect(collector.categorizePRSize({ total_changes: 10 })).toBe('xs')
+    it('should categorize S (<105 changes)', () => {
+      expect(collector.categorizePRSize({ total_changes: 5 })).toBe('s')
+      expect(collector.categorizePRSize({ total_changes: 104 })).toBe('s')
     })
 
-    it('should categorize S (11-50 changes)', () => {
-      expect(collector.categorizePRSize({ total_changes: 25 })).toBe('s')
-      expect(collector.categorizePRSize({ total_changes: 50 })).toBe('s')
+    it('should categorize M (106-160 changes)', () => {
+      expect(collector.categorizePRSize({ total_changes: 106 })).toBe('m')
+      expect(collector.categorizePRSize({ total_changes: 160 })).toBe('m')
     })
 
-    it('should categorize M (51-200 changes)', () => {
-      expect(collector.categorizePRSize({ total_changes: 100 })).toBe('m')
-      expect(collector.categorizePRSize({ total_changes: 200 })).toBe('m')
+    it('should categorize L (161-240 changes)', () => {
+      expect(collector.categorizePRSize({ total_changes: 161 })).toBe('l')
+      expect(collector.categorizePRSize({ total_changes: 240 })).toBe('l')
     })
 
-    it('should categorize L (201-500 changes)', () => {
-      expect(collector.categorizePRSize({ total_changes: 300 })).toBe('l')
-      expect(collector.categorizePRSize({ total_changes: 500 })).toBe('l')
-    })
-
-    it('should categorize XL (>500 changes)', () => {
-      expect(collector.categorizePRSize({ total_changes: 501 })).toBe('xl')
+    it('should categorize XL (>240 changes)', () => {
+      expect(collector.categorizePRSize({ total_changes: 241 })).toBe('xl')
       expect(collector.categorizePRSize({ total_changes: 1000 })).toBe('xl')
     })
   })
 
   describe('getSizeEmoji', () => {
     it('should return correct emojis for each size', () => {
-      expect(collector.getSizeEmoji('xs')).toBe('🤏')
       expect(collector.getSizeEmoji('s')).toBe('🔹')
       expect(collector.getSizeEmoji('m')).toBe('🔸')
       expect(collector.getSizeEmoji('l')).toBe('🔶')
@@ -402,16 +392,16 @@ describe('DevExMetricsCollector', () => {
 
   describe('getMaturityEmoji', () => {
     it('should return correct emojis for each maturity level', () => {
-      expect(collector.getMaturityEmoji(100)).toBe('🎯')
-      expect(collector.getMaturityEmoji(90)).toBe('🎯')
-      expect(collector.getMaturityEmoji(85)).toBe('✅')
-      expect(collector.getMaturityEmoji(75)).toBe('✅')
-      expect(collector.getMaturityEmoji(60)).toBe('⚠️')
-      expect(collector.getMaturityEmoji(50)).toBe('⚠️')
-      expect(collector.getMaturityEmoji(40)).toBe('🚧')
-      expect(collector.getMaturityEmoji(25)).toBe('🚧')
-      expect(collector.getMaturityEmoji(10)).toBe('❌')
-      expect(collector.getMaturityEmoji(0)).toBe('❌')
+      expect(collector.getMaturityEmoji(100)).toBe('⭐')
+      expect(collector.getMaturityEmoji(89)).toBe('⭐')
+      expect(collector.getMaturityEmoji(87)).toBe('✅')
+      expect(collector.getMaturityEmoji(81)).toBe('✅')
+      expect(collector.getMaturityEmoji(80)).toBe('⚖️')
+      expect(collector.getMaturityEmoji(75)).toBe('⚖️')
+      expect(collector.getMaturityEmoji(74)).toBe('🎯')
+      expect(collector.getMaturityEmoji(50)).toBe('🎯')
+      expect(collector.getMaturityEmoji(10)).toBe('🎯')
+      expect(collector.getMaturityEmoji(0)).toBe('🎯')
     })
 
     it('should handle null and undefined values', () => {
@@ -422,16 +412,16 @@ describe('DevExMetricsCollector', () => {
 
   describe('getMaturityLevel', () => {
     it('should return correct level descriptions', () => {
-      expect(collector.getMaturityLevel(100)).toBe('Excellent')
-      expect(collector.getMaturityLevel(90)).toBe('Excellent')
-      expect(collector.getMaturityLevel(85)).toBe('Good')
-      expect(collector.getMaturityLevel(75)).toBe('Good')
-      expect(collector.getMaturityLevel(60)).toBe('Moderate')
-      expect(collector.getMaturityLevel(50)).toBe('Moderate')
-      expect(collector.getMaturityLevel(40)).toBe('Poor')
-      expect(collector.getMaturityLevel(25)).toBe('Poor')
-      expect(collector.getMaturityLevel(10)).toBe('Very Poor')
-      expect(collector.getMaturityLevel(0)).toBe('Very Poor')
+      expect(collector.getMaturityLevel(100)).toBe('Elite')
+      expect(collector.getMaturityLevel(89)).toBe('Elite')
+      expect(collector.getMaturityLevel(87)).toBe('Good')
+      expect(collector.getMaturityLevel(81)).toBe('Good')
+      expect(collector.getMaturityLevel(80)).toBe('Fair')
+      expect(collector.getMaturityLevel(75)).toBe('Fair')
+      expect(collector.getMaturityLevel(74)).toBe('Needs Focus')
+      expect(collector.getMaturityLevel(50)).toBe('Needs Focus')
+      expect(collector.getMaturityLevel(10)).toBe('Needs Focus')
+      expect(collector.getMaturityLevel(0)).toBe('Needs Focus')
     })
 
     it('should handle null and undefined values', () => {
