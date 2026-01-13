@@ -222,6 +222,60 @@ class TestTeamMetricsCollector {
     }
     return emojiMap[rating] || '❓'
   }
+
+  getReadyForReviewTime(pr, createdAt, timeline) {
+    if (!pr.draft) {
+      const readyEvent = timeline?.find(
+        (event) => event.event === 'ready_for_review'
+      )
+      if (readyEvent) {
+        return new Date(readyEvent.created_at)
+      }
+      return createdAt
+    }
+
+    const readyEvent = timeline?.find(
+      (event) => event.event === 'ready_for_review'
+    )
+
+    if (readyEvent) {
+      return new Date(readyEvent.created_at)
+    }
+
+    return createdAt
+  }
+
+  rateCycleTime(hours) {
+    if (hours < 45) return 'Elite'
+    if (hours <= 95) return 'Good'
+    if (hours <= 169) return 'Fair'
+    return 'Needs Focus'
+  }
+
+  rateDeployFrequency(frequency) {
+    if (frequency > 0.9) return 'Elite'
+    if (frequency >= 0.5) return 'Good'
+    if (frequency >= 0.2) return 'Fair'
+    return 'Needs Focus'
+  }
+
+  ratePRSize(size) {
+    const sizeMap = {
+      s: 'Elite',
+      m: 'Good',
+      l: 'Fair',
+      xl: 'Needs Focus'
+    }
+    return sizeMap[size] || 'Unknown'
+  }
+
+  ratePRMaturity(percentage) {
+    if (percentage === null || percentage === undefined) return 'Unknown'
+    if (percentage > 88) return 'Elite'
+    if (percentage >= 81) return 'Good'
+    if (percentage >= 75) return 'Fair'
+    return 'Needs Focus'
+  }
 }
 
 describe('TeamMetricsCollector', () => {
@@ -597,6 +651,141 @@ describe('TeamMetricsCollector', () => {
       expect(collector.getRatingEmoji('Fair')).toBe('⚖️')
       expect(collector.getRatingEmoji('Needs Focus')).toBe('🎯')
       expect(collector.getRatingEmoji('Unknown')).toBe('❓')
+    })
+  })
+
+  describe('getReadyForReviewTime', () => {
+    it('should return creation time for non-draft PR', () => {
+      const createdAt = new Date('2024-01-01T10:00:00Z')
+      const pr = { draft: false }
+      const timeline = []
+
+      const result = collector.getReadyForReviewTime(pr, createdAt, timeline)
+      expect(result).toEqual(createdAt)
+    })
+
+    it('should return ready_for_review event time for converted PR', () => {
+      const createdAt = new Date('2024-01-01T10:00:00Z')
+      const readyTime = new Date('2024-01-02T10:00:00Z')
+      const pr = { draft: false }
+      const timeline = [
+        { event: 'ready_for_review', created_at: readyTime.toISOString() }
+      ]
+
+      const result = collector.getReadyForReviewTime(pr, createdAt, timeline)
+      expect(result).toEqual(readyTime)
+    })
+
+    it('should return ready_for_review event time for draft PR', () => {
+      const createdAt = new Date('2024-01-01T10:00:00Z')
+      const readyTime = new Date('2024-01-03T14:00:00Z')
+      const pr = { draft: true }
+      const timeline = [
+        { event: 'ready_for_review', created_at: readyTime.toISOString() }
+      ]
+
+      const result = collector.getReadyForReviewTime(pr, createdAt, timeline)
+      expect(result).toEqual(readyTime)
+    })
+
+    it('should fallback to creation time if no ready event found', () => {
+      const createdAt = new Date('2024-01-01T10:00:00Z')
+      const pr = { draft: true }
+      const timeline = []
+
+      const result = collector.getReadyForReviewTime(pr, createdAt, timeline)
+      expect(result).toEqual(createdAt)
+    })
+  })
+
+  describe('rating methods - additional', () => {
+    describe('rateCycleTime', () => {
+      it('should rate as Elite for < 45 hours', () => {
+        expect(collector.rateCycleTime(44)).toBe('Elite')
+      })
+
+      it('should rate as Good for 45-95 hours', () => {
+        expect(collector.rateCycleTime(45)).toBe('Good')
+        expect(collector.rateCycleTime(95)).toBe('Good')
+      })
+
+      it('should rate as Fair for 96-169 hours', () => {
+        expect(collector.rateCycleTime(96)).toBe('Fair')
+        expect(collector.rateCycleTime(169)).toBe('Fair')
+      })
+
+      it('should rate as Needs Focus for > 169 hours', () => {
+        expect(collector.rateCycleTime(170)).toBe('Needs Focus')
+      })
+    })
+
+    describe('rateDeployFrequency', () => {
+      it('should rate as Elite for > 0.9', () => {
+        expect(collector.rateDeployFrequency(1.0)).toBe('Elite')
+      })
+
+      it('should rate as Good for 0.5-0.9', () => {
+        expect(collector.rateDeployFrequency(0.5)).toBe('Good')
+        expect(collector.rateDeployFrequency(0.9)).toBe('Good')
+      })
+
+      it('should rate as Fair for 0.2-0.49', () => {
+        expect(collector.rateDeployFrequency(0.2)).toBe('Fair')
+        expect(collector.rateDeployFrequency(0.49)).toBe('Fair')
+      })
+
+      it('should rate as Needs Focus for < 0.2', () => {
+        expect(collector.rateDeployFrequency(0.1)).toBe('Needs Focus')
+      })
+    })
+
+    describe('ratePRSize', () => {
+      it('should rate small as Elite', () => {
+        expect(collector.ratePRSize('s')).toBe('Elite')
+      })
+
+      it('should rate medium as Good', () => {
+        expect(collector.ratePRSize('m')).toBe('Good')
+      })
+
+      it('should rate large as Fair', () => {
+        expect(collector.ratePRSize('l')).toBe('Fair')
+      })
+
+      it('should rate extra large as Needs Focus', () => {
+        expect(collector.ratePRSize('xl')).toBe('Needs Focus')
+      })
+
+      it('should return Unknown for unrecognized size', () => {
+        expect(collector.ratePRSize('unknown')).toBe('Unknown')
+      })
+    })
+
+    describe('ratePRMaturity', () => {
+      it('should rate as Elite for > 88%', () => {
+        expect(collector.ratePRMaturity(89)).toBe('Elite')
+        expect(collector.ratePRMaturity(100)).toBe('Elite')
+      })
+
+      it('should rate as Good for 81-88%', () => {
+        expect(collector.ratePRMaturity(81)).toBe('Good')
+        expect(collector.ratePRMaturity(88)).toBe('Good')
+      })
+
+      it('should rate as Fair for 75-80%', () => {
+        expect(collector.ratePRMaturity(75)).toBe('Fair')
+        expect(collector.ratePRMaturity(80)).toBe('Fair')
+      })
+
+      it('should rate as Needs Focus for < 75%', () => {
+        expect(collector.ratePRMaturity(74)).toBe('Needs Focus')
+        expect(collector.ratePRMaturity(50)).toBe('Needs Focus')
+      })
+
+      it('should return Unknown for null or undefined', () => {
+        expect(collector.ratePRMaturity(null)).toBe('Unknown')
+        expect(collector.ratePRMaturity(undefined)).toBe('Unknown')
+      })
     })
   })
 })

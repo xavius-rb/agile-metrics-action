@@ -32259,6 +32259,24 @@ class DevExMetricsCollector {
   async calculatePRSize(prNumber) {
     try {
       const prDetails = await this.githubClient.getPullRequest(prNumber);
+
+      // Skip calculation for draft PRs
+      if (prDetails?.draft) {
+        coreExports.info('PR is a draft - skipping size calculation');
+        return {
+          size: 'draft',
+          category: 'draft',
+          details: {
+            total_additions: null,
+            total_deletions: null,
+            total_changes: null,
+            files_changed: null,
+            files_analyzed: null,
+            reason: 'PR is in draft status'
+          }
+        }
+      }
+
       const prFiles = await this.githubClient.getPullRequestFiles(prNumber);
 
       if (!prFiles || prFiles.length === 0) {
@@ -32394,6 +32412,18 @@ class DevExMetricsCollector {
           maturity_percentage: null,
           details: {
             error: 'Could not fetch PR details'
+          }
+        }
+      }
+
+      // Skip calculation for draft PRs
+      if (prDetails.draft) {
+        coreExports.info('PR is a draft - skipping maturity calculation');
+        return {
+          maturity_ratio: null,
+          maturity_percentage: null,
+          details: {
+            reason: 'PR is in draft status'
           }
         }
       }
@@ -32950,7 +32980,16 @@ class TeamMetricsCollector {
 
         // Calculate cycle time for ALL commits in this release
         // (not filtered by date - we want all commits that were released in this period)
+        // Exclude the tag commit itself as it typically has timestamp at/near release time
         for (const commit of commits) {
+          // Skip the tag commit itself
+          if (commit.sha === tagData.sha) {
+            coreExports.debug(
+              `Skipping tag commit ${commit.sha} from cycle time calculation`
+            );
+            continue
+          }
+
           const commitDate =
             commit.commit?.committer?.date || commit.commit?.author?.date;
           if (!commitDate) continue
@@ -33135,12 +33174,23 @@ class TeamMetricsCollector {
         this.githubClient.getPullRequestReviews(prNumber)
       ]);
 
-      // Calculate pickup time (creation to first review comment)
-      const pickupTime = this.calculatePickupTime(createdAt, timeline, reviews);
+      // Find when PR was marked as ready for review (if it was a draft)
+      const readyForReviewAt = this.getReadyForReviewTime(
+        pr,
+        createdAt,
+        timeline
+      );
+
+      // Calculate pickup time (ready for review to first review comment)
+      const pickupTime = this.calculatePickupTime(
+        readyForReviewAt,
+        timeline,
+        reviews
+      );
 
       // Calculate approve time (first comment to first approval)
       const approveTime = this.calculateApproveTime(
-        createdAt,
+        readyForReviewAt,
         timeline,
         reviews
       );
@@ -33174,13 +33224,47 @@ class TeamMetricsCollector {
   }
 
   /**
-   * Calculate pickup time - time from PR creation to first review activity
+   * Get the time when PR was marked as ready for review
+   * If PR was never a draft, returns the creation time
+   * @param {Object} pr - Pull request object
    * @param {Date} createdAt - PR creation time
+   * @param {Array} timeline - PR timeline events
+   * @returns {Date} Time when PR became ready for review
+   */
+  getReadyForReviewTime(pr, createdAt, timeline) {
+    // If PR was never a draft, use creation time
+    if (!pr.draft) {
+      // Check timeline for 'ready_for_review' event in case it was converted
+      const readyEvent = timeline?.find(
+        (event) => event.event === 'ready_for_review'
+      );
+      if (readyEvent) {
+        return new Date(readyEvent.created_at)
+      }
+      return createdAt
+    }
+
+    // PR is or was a draft - find when it was marked as ready
+    const readyEvent = timeline?.find(
+      (event) => event.event === 'ready_for_review'
+    );
+
+    if (readyEvent) {
+      return new Date(readyEvent.created_at)
+    }
+
+    // If still a draft or no ready event found, use creation time as fallback
+    return createdAt
+  }
+
+  /**
+   * Calculate pickup time - time from PR ready for review to first review activity
+   * @param {Date} readyForReviewAt - Time when PR became ready for review
    * @param {Array} timeline - PR timeline events
    * @param {Array} reviews - PR reviews
    * @returns {number|null} Pickup time in hours
    */
-  calculatePickupTime(createdAt, timeline, reviews) {
+  calculatePickupTime(readyForReviewAt, timeline, reviews) {
     // Find first review comment (exclude bot activity)
     const firstReviewComment = timeline?.find(
       (event) =>
@@ -33216,7 +33300,7 @@ class TeamMetricsCollector {
       return null
     }
 
-    const diffMs = firstActivityTime - createdAt;
+    const diffMs = firstActivityTime - readyForReviewAt;
     const hours = diffMs / (1000 * 60 * 60);
 
     // Return null if negative (shouldn't happen but safety check)
@@ -33229,12 +33313,12 @@ class TeamMetricsCollector {
 
   /**
    * Calculate approve time - time from first comment to first approval
-   * @param {Date} createdAt - PR creation time
+   * @param {Date} readyForReviewAt - Time when PR became ready for review
    * @param {Array} timeline - PR timeline events
    * @param {Array} reviews - PR reviews
    * @returns {number|null} Approve time in hours
    */
-  calculateApproveTime(createdAt, timeline, reviews) {
+  calculateApproveTime(readyForReviewAt, timeline, reviews) {
     // Find first approval
     const firstApproval = reviews?.find((review) => review.state === 'APPROVED');
 
@@ -33251,10 +33335,10 @@ class TeamMetricsCollector {
         new Date(event.created_at) < new Date(firstApproval.submitted_at)
     );
 
-    // Calculate time from first comment to approval, or from PR creation if no prior comments
+    // Calculate time from first comment to approval, or from PR ready for review if no prior comments
     const startTime = firstComment
       ? new Date(firstComment.created_at)
-      : createdAt;
+      : readyForReviewAt;
     const approvalTime = new Date(firstApproval.submitted_at);
 
     const diffMs = approvalTime - startTime;
@@ -33624,15 +33708,13 @@ class TeamMetricsCollector {
 
           report += `### ${cycleTimeEmoji} Cycle Time — **${doraMetrics.cycle_time.avg_hours}h** (*${cycleTimeRating}*)\n`;
           report += `**Definition:** Time from code commit to release<br>\n`;
-          report += `**Sample size:** ${doraMetrics.cycle_time.commit_count || 0} commits\n`;
+          report += `**Sample size:** ${doraMetrics.cycle_time.commit_count || 0} commits`;
 
           // Add oldest and newest commit details if available
           if (oldestHours !== null && newestHours !== null) {
-            const oldestDays = Math.floor(oldestHours / 24);
-            const newestDays = Math.floor(newestHours / 24);
             report += `<br>\n`;
-            report += `📅 **Oldest commit:** ${oldestHours}h (${oldestDays} days)<br>\n`;
-            report += `📅 **Newest commit:** ${newestHours}h (${newestDays} days)\n`;
+            report += `📅 **Oldest commit:** ${oldestHours}h<br>\n`;
+            report += `📅 **Newest commit:** ${newestHours}h\n`;
           }
 
           report += `\n`;
