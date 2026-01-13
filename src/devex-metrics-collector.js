@@ -96,6 +96,24 @@ export class DevExMetricsCollector {
   async calculatePRSize(prNumber) {
     try {
       const prDetails = await this.githubClient.getPullRequest(prNumber)
+
+      // Skip calculation for draft PRs
+      if (prDetails?.draft) {
+        core.info('PR is a draft - skipping size calculation')
+        return {
+          size: 'draft',
+          category: 'draft',
+          details: {
+            total_additions: null,
+            total_deletions: null,
+            total_changes: null,
+            files_changed: null,
+            files_analyzed: null,
+            reason: 'PR is in draft status'
+          }
+        }
+      }
+
       const prFiles = await this.githubClient.getPullRequestFiles(prNumber)
 
       if (!prFiles || prFiles.length === 0) {
@@ -231,6 +249,18 @@ export class DevExMetricsCollector {
           maturity_percentage: null,
           details: {
             error: 'Could not fetch PR details'
+          }
+        }
+      }
+
+      // Skip calculation for draft PRs
+      if (prDetails.draft) {
+        core.info('PR is a draft - skipping maturity calculation')
+        return {
+          maturity_ratio: null,
+          maturity_percentage: null,
+          details: {
+            reason: 'PR is in draft status'
           }
         }
       }
