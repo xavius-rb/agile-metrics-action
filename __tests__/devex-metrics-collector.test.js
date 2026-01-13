@@ -429,4 +429,187 @@ describe('DevExMetricsCollector', () => {
       expect(collector.getMaturityLevel(undefined)).toBe('Unknown')
     })
   })
+
+  describe('draft PR handling', () => {
+    describe('calculatePRSize with draft PR', () => {
+      it('should return draft status for draft PR', async () => {
+        const mockCollector = {
+          githubClient: {
+            getPullRequest: jest.fn().mockResolvedValue({ draft: true }),
+            getPullRequestFiles: jest.fn()
+          },
+          options: {},
+          filterFiles: collector.filterFiles.bind(collector),
+          calculateSizeDetails: collector.calculateSizeDetails.bind(collector),
+          categorizePRSize: collector.categorizePRSize.bind(collector)
+        }
+
+        const calculatePRSize = async function (prNumber) {
+          const prDetails = await this.githubClient.getPullRequest(prNumber)
+
+          if (prDetails?.draft) {
+            return {
+              size: 'draft',
+              category: 'draft',
+              details: {
+                total_additions: null,
+                total_deletions: null,
+                total_changes: null,
+                files_changed: null,
+                files_analyzed: null,
+                reason: 'PR is in draft status'
+              }
+            }
+          }
+
+          const prFiles = await this.githubClient.getPullRequestFiles(prNumber)
+          if (!prFiles || prFiles.length === 0) {
+            return { size: 'xs' }
+          }
+
+          const filteredFiles = this.filterFiles(prFiles)
+          const sizeDetails = this.calculateSizeDetails(filteredFiles)
+          const sizeCategory = this.categorizePRSize(sizeDetails)
+
+          return {
+            size: sizeCategory,
+            category: `size/${sizeCategory}`,
+            details: sizeDetails
+          }
+        }
+
+        const result = await calculatePRSize.call(mockCollector, 123)
+
+        expect(result.size).toBe('draft')
+        expect(result.category).toBe('draft')
+        expect(result.details.reason).toBe('PR is in draft status')
+        expect(
+          mockCollector.githubClient.getPullRequestFiles
+        ).not.toHaveBeenCalled()
+      })
+
+      it('should calculate size for non-draft PR', async () => {
+        const mockCollector = {
+          githubClient: {
+            getPullRequest: jest.fn().mockResolvedValue({ draft: false }),
+            getPullRequestFiles: jest
+              .fn()
+              .mockResolvedValue([
+                { filename: 'test.js', additions: 50, deletions: 10 }
+              ])
+          },
+          options: {},
+          filterFiles: collector.filterFiles.bind(collector),
+          calculateSizeDetails: collector.calculateSizeDetails.bind(collector),
+          categorizePRSize: collector.categorizePRSize.bind(collector)
+        }
+
+        const calculatePRSize = async function (prNumber) {
+          const prDetails = await this.githubClient.getPullRequest(prNumber)
+
+          if (prDetails?.draft) {
+            return {
+              size: 'draft',
+              category: 'draft',
+              details: { reason: 'PR is in draft status' }
+            }
+          }
+
+          const prFiles = await this.githubClient.getPullRequestFiles(prNumber)
+          const filteredFiles = this.filterFiles(prFiles)
+          const sizeDetails = this.calculateSizeDetails(filteredFiles)
+          const sizeCategory = this.categorizePRSize(sizeDetails)
+
+          return {
+            size: sizeCategory,
+            category: `size/${sizeCategory}`,
+            details: sizeDetails
+          }
+        }
+
+        const result = await calculatePRSize.call(mockCollector, 123)
+
+        expect(result.size).toBe('s')
+        expect(result.category).toBe('size/s')
+        expect(
+          mockCollector.githubClient.getPullRequestFiles
+        ).toHaveBeenCalledWith(123)
+      })
+    })
+
+    describe('calculatePRMaturity with draft PR', () => {
+      it('should return null maturity for draft PR', async () => {
+        const mockCollector = {
+          githubClient: {
+            getPullRequest: jest.fn().mockResolvedValue({ draft: true }),
+            getPullRequestCommits: jest.fn()
+          }
+        }
+
+        const calculatePRMaturity = async function (prNumber) {
+          const prDetails = await this.githubClient.getPullRequest(prNumber)
+
+          if (!prDetails) {
+            return {
+              maturity_ratio: null,
+              maturity_percentage: null,
+              details: { error: 'Could not fetch PR details' }
+            }
+          }
+
+          if (prDetails.draft) {
+            return {
+              maturity_ratio: null,
+              maturity_percentage: null,
+              details: { reason: 'PR is in draft status' }
+            }
+          }
+
+          return {
+            maturity_ratio: 1,
+            maturity_percentage: 100
+          }
+        }
+
+        const result = await calculatePRMaturity.call(mockCollector, 123)
+
+        expect(result.maturity_ratio).toBeNull()
+        expect(result.maturity_percentage).toBeNull()
+        expect(result.details.reason).toBe('PR is in draft status')
+        expect(
+          mockCollector.githubClient.getPullRequestCommits
+        ).not.toHaveBeenCalled()
+      })
+
+      it('should calculate maturity for non-draft PR', async () => {
+        const mockCollector = {
+          githubClient: {
+            getPullRequest: jest.fn().mockResolvedValue({ draft: false }),
+            getPullRequestCommits: jest.fn().mockResolvedValue([])
+          }
+        }
+
+        const calculatePRMaturity = async function (prNumber) {
+          const prDetails = await this.githubClient.getPullRequest(prNumber)
+
+          if (!prDetails || prDetails.draft) {
+            return {
+              maturity_ratio: null,
+              maturity_percentage: null
+            }
+          }
+
+          return {
+            maturity_ratio: 0.85,
+            maturity_percentage: 85
+          }
+        }
+
+        const result = await calculatePRMaturity.call(mockCollector, 123)
+
+        expect(result.maturity_ratio).toBe(0.85)
+        expect(result.maturity_percentage).toBe(85)
+      })
+    })
+  })
 })

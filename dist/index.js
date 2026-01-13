@@ -32259,6 +32259,24 @@ class DevExMetricsCollector {
   async calculatePRSize(prNumber) {
     try {
       const prDetails = await this.githubClient.getPullRequest(prNumber);
+
+      // Skip calculation for draft PRs
+      if (prDetails?.draft) {
+        coreExports.info('PR is a draft - skipping size calculation');
+        return {
+          size: 'draft',
+          category: 'draft',
+          details: {
+            total_additions: null,
+            total_deletions: null,
+            total_changes: null,
+            files_changed: null,
+            files_analyzed: null,
+            reason: 'PR is in draft status'
+          }
+        }
+      }
+
       const prFiles = await this.githubClient.getPullRequestFiles(prNumber);
 
       if (!prFiles || prFiles.length === 0) {
@@ -32394,6 +32412,18 @@ class DevExMetricsCollector {
           maturity_percentage: null,
           details: {
             error: 'Could not fetch PR details'
+          }
+        }
+      }
+
+      // Skip calculation for draft PRs
+      if (prDetails.draft) {
+        coreExports.info('PR is a draft - skipping maturity calculation');
+        return {
+          maturity_ratio: null,
+          maturity_percentage: null,
+          details: {
+            reason: 'PR is in draft status'
           }
         }
       }
@@ -32846,13 +32876,15 @@ class TeamMetricsCollector {
   }
 
   /**
-   * Calculate cycle time for releases in the time period
+   * Calculate cycle time for releases created in the time period
+   * For each release in the period, includes ALL commits in that release
+   * regardless of when they were created
    * @param {Object} dateRange - Date range object with start and end
    * @returns {Promise<Object>} Cycle time metrics
    */
   async calculateCycleTime(dateRange) {
     try {
-      // Get releases within the date range
+      // Get releases created within the date range
       const releases = await this.githubClient.getReleasesByDateRange(
         dateRange.start,
         dateRange.end
@@ -32862,15 +32894,22 @@ class TeamMetricsCollector {
         return {
           cycle_time: {
             avg_hours: null,
-            commit_count: 0
+            commit_count: 0,
+            oldest_hours: null,
+            newest_hours: null
           }
         }
       }
 
       const allCycleTimes = [];
       let totalCommitCount = 0;
+      let oldestCycleTime = null;
+      let newestCycleTime = null;
 
-      // For each release, calculate cycle times for its commits
+      // Get all releases for comparison (to find previous release)
+      const allReleases = await this.githubClient.listReleases(100);
+
+      // For each release in the date range, calculate cycle times for ALL its commits
       for (const release of releases) {
         const releaseCreatedAt = new Date(release.created_at);
 
@@ -32878,9 +32917,7 @@ class TeamMetricsCollector {
         const tagData = await this.githubClient.resolveTag(release.tag_name);
         if (!tagData?.sha) continue
 
-        // Get commits for this release
-        // We need to find the previous release/tag to compare
-        const allReleases = await this.githubClient.listReleases(100);
+        // Find the previous release to determine which commits belong to this release
         const releaseIndex = allReleases.findIndex(
           (r) => r.tag_name === release.tag_name
         );
@@ -32895,35 +32932,88 @@ class TeamMetricsCollector {
             previousRelease.tag_name
           );
           if (prevTagData?.sha) {
+            coreExports.info(
+              `Comparing commits between ${previousRelease.tag_name} and ${release.tag_name}`
+            );
             const comparison = await this.githubClient.compareCommits(
               prevTagData.sha,
               tagData.sha
             );
             commits = comparison.commits || [];
+            coreExports.info(
+              `Found ${commits.length} commits in release ${release.tag_name}`
+            );
+          } else {
+            coreExports.warning(
+              `Failed to resolve previous release tag: ${previousRelease.tag_name}`
+            );
           }
         } else {
-          // First release - just get the single commit
-          const commit = await this.githubClient.getCommit(tagData.sha);
-          if (commit) commits = [commit];
+          // First release - get all commits up to this tag
+          coreExports.info(
+            `First release detected: ${release.tag_name}, getting all commits`
+          );
+          // For the first release, we should get ALL commits in the repository up to this tag
+          // not just the tag commit itself
+          try {
+            // Get commits from the beginning of the repo to this tag
+            const commitsResponse = await this.githubClient.octokit.request(
+              'GET /repos/{owner}/{repo}/commits',
+              {
+                owner: this.githubClient.owner,
+                repo: this.githubClient.repo,
+                sha: tagData.sha,
+                per_page: 100
+              }
+            );
+            commits = commitsResponse.data || [];
+            coreExports.info(`Found ${commits.length} commits in first release`);
+          } catch (error) {
+            coreExports.warning(
+              `Failed to get commits for first release: ${error.message}`
+            );
+            // Fallback to just the tag commit
+            const commit = await this.githubClient.getCommit(tagData.sha);
+            if (commit) commits = [commit];
+          }
         }
 
-        // Calculate cycle time for each commit
+        // Calculate cycle time for ALL commits in this release
+        // (not filtered by date - we want all commits that were released in this period)
+        // Exclude the tag commit itself as it typically has timestamp at/near release time
         for (const commit of commits) {
+          // Skip the tag commit itself
+          if (commit.sha === tagData.sha) {
+            coreExports.debug(
+              `Skipping tag commit ${commit.sha} from cycle time calculation`
+            );
+            continue
+          }
+
           const commitDate =
             commit.commit?.committer?.date || commit.commit?.author?.date;
           if (!commitDate) continue
 
           const commitTime = new Date(commitDate);
-          const ageHours = (releaseCreatedAt - commitTime) / (1000 * 60 * 60);
+          const cycleTimeHours =
+            (releaseCreatedAt - commitTime) / (1000 * 60 * 60);
 
-          if (ageHours >= 0) {
-            allCycleTimes.push(ageHours);
+          if (cycleTimeHours >= 0) {
+            allCycleTimes.push(cycleTimeHours);
             totalCommitCount++;
+
+            // Track oldest and newest cycle times
+            if (oldestCycleTime === null || cycleTimeHours > oldestCycleTime) {
+              oldestCycleTime = cycleTimeHours;
+            }
+            if (newestCycleTime === null || cycleTimeHours < newestCycleTime) {
+              newestCycleTime = cycleTimeHours;
+            }
           }
         }
       }
 
-      // Calculate average
+      // Calculate average and round values
       const avgCycleTime =
         allCycleTimes.length > 0
           ? Math.round(
@@ -32936,7 +33026,15 @@ class TeamMetricsCollector {
       return {
         cycle_time: {
           avg_hours: avgCycleTime,
-          commit_count: totalCommitCount
+          commit_count: totalCommitCount,
+          oldest_hours:
+            oldestCycleTime !== null
+              ? Math.round(oldestCycleTime * 100) / 100
+              : null,
+          newest_hours:
+            newestCycleTime !== null
+              ? Math.round(newestCycleTime * 100) / 100
+              : null
         }
       }
     } catch (error) {
@@ -32944,7 +33042,9 @@ class TeamMetricsCollector {
       return {
         cycle_time: {
           avg_hours: null,
-          commit_count: 0
+          commit_count: 0,
+          oldest_hours: null,
+          newest_hours: null
         }
       }
     }
@@ -33044,7 +33144,7 @@ class TeamMetricsCollector {
         unique_authors: this.countUniqueAuthors(prs),
         metrics: stats,
         dora_metrics: {
-          ...cycleTimeMetrics.cycle_time,
+          cycle_time: cycleTimeMetrics.cycle_time,
           ...deployFreqMetrics
         },
         timestamp: new Date().toISOString()
@@ -33074,12 +33174,23 @@ class TeamMetricsCollector {
         this.githubClient.getPullRequestReviews(prNumber)
       ]);
 
-      // Calculate pickup time (creation to first review comment)
-      const pickupTime = this.calculatePickupTime(createdAt, timeline, reviews);
+      // Find when PR was marked as ready for review (if it was a draft)
+      const readyForReviewAt = this.getReadyForReviewTime(
+        pr,
+        createdAt,
+        timeline
+      );
+
+      // Calculate pickup time (ready for review to first review comment)
+      const pickupTime = this.calculatePickupTime(
+        readyForReviewAt,
+        timeline,
+        reviews
+      );
 
       // Calculate approve time (first comment to first approval)
       const approveTime = this.calculateApproveTime(
-        createdAt,
+        readyForReviewAt,
         timeline,
         reviews
       );
@@ -33113,13 +33224,47 @@ class TeamMetricsCollector {
   }
 
   /**
-   * Calculate pickup time - time from PR creation to first review activity
+   * Get the time when PR was marked as ready for review
+   * If PR was never a draft, returns the creation time
+   * @param {Object} pr - Pull request object
    * @param {Date} createdAt - PR creation time
+   * @param {Array} timeline - PR timeline events
+   * @returns {Date} Time when PR became ready for review
+   */
+  getReadyForReviewTime(pr, createdAt, timeline) {
+    // If PR was never a draft, use creation time
+    if (!pr.draft) {
+      // Check timeline for 'ready_for_review' event in case it was converted
+      const readyEvent = timeline?.find(
+        (event) => event.event === 'ready_for_review'
+      );
+      if (readyEvent) {
+        return new Date(readyEvent.created_at)
+      }
+      return createdAt
+    }
+
+    // PR is or was a draft - find when it was marked as ready
+    const readyEvent = timeline?.find(
+      (event) => event.event === 'ready_for_review'
+    );
+
+    if (readyEvent) {
+      return new Date(readyEvent.created_at)
+    }
+
+    // If still a draft or no ready event found, use creation time as fallback
+    return createdAt
+  }
+
+  /**
+   * Calculate pickup time - time from PR ready for review to first review activity
+   * @param {Date} readyForReviewAt - Time when PR became ready for review
    * @param {Array} timeline - PR timeline events
    * @param {Array} reviews - PR reviews
    * @returns {number|null} Pickup time in hours
    */
-  calculatePickupTime(createdAt, timeline, reviews) {
+  calculatePickupTime(readyForReviewAt, timeline, reviews) {
     // Find first review comment (exclude bot activity)
     const firstReviewComment = timeline?.find(
       (event) =>
@@ -33155,7 +33300,7 @@ class TeamMetricsCollector {
       return null
     }
 
-    const diffMs = firstActivityTime - createdAt;
+    const diffMs = firstActivityTime - readyForReviewAt;
     const hours = diffMs / (1000 * 60 * 60);
 
     // Return null if negative (shouldn't happen but safety check)
@@ -33168,12 +33313,12 @@ class TeamMetricsCollector {
 
   /**
    * Calculate approve time - time from first comment to first approval
-   * @param {Date} createdAt - PR creation time
+   * @param {Date} readyForReviewAt - Time when PR became ready for review
    * @param {Array} timeline - PR timeline events
    * @param {Array} reviews - PR reviews
    * @returns {number|null} Approve time in hours
    */
-  calculateApproveTime(createdAt, timeline, reviews) {
+  calculateApproveTime(readyForReviewAt, timeline, reviews) {
     // Find first approval
     const firstApproval = reviews?.find((review) => review.state === 'APPROVED');
 
@@ -33190,10 +33335,10 @@ class TeamMetricsCollector {
         new Date(event.created_at) < new Date(firstApproval.submitted_at)
     );
 
-    // Calculate time from first comment to approval, or from PR creation if no prior comments
+    // Calculate time from first comment to approval, or from PR ready for review if no prior comments
     const startTime = firstComment
       ? new Date(firstComment.created_at)
-      : createdAt;
+      : readyForReviewAt;
     const approvalTime = new Date(firstApproval.submitted_at);
 
     const diffMs = approvalTime - startTime;
@@ -33558,7 +33703,21 @@ class TeamMetricsCollector {
             doraMetrics.cycle_time.avg_hours
           );
           const cycleTimeEmoji = this.getRatingEmoji(cycleTimeRating);
-          report += `### ${cycleTimeEmoji} Cycle Time — **${doraMetrics.cycle_time.avg_hours}h** (*${cycleTimeRating}*)\n**Definition:** Time from code commit to release<br>\n**Sample size:** ${doraMetrics.cycle_time.commit_count || 0} commits\n\n`;
+          const oldestHours = doraMetrics.cycle_time.oldest_hours;
+          const newestHours = doraMetrics.cycle_time.newest_hours;
+
+          report += `### ${cycleTimeEmoji} Cycle Time — **${doraMetrics.cycle_time.avg_hours}h** (*${cycleTimeRating}*)\n`;
+          report += `**Definition:** Time from code commit to release<br>\n`;
+          report += `**Sample size:** ${doraMetrics.cycle_time.commit_count || 0} commits`;
+
+          // Add oldest and newest commit details if available
+          if (oldestHours !== null && newestHours !== null) {
+            report += `<br>\n`;
+            report += `📅 **Oldest commit:** ${oldestHours}h<br>\n`;
+            report += `📅 **Newest commit:** ${newestHours}h\n`;
+          }
+
+          report += `\n`;
         }
 
         if (hasDeployFreq) {
@@ -33566,7 +33725,7 @@ class TeamMetricsCollector {
             doraMetrics.deploy_frequency_days
           );
           const deployFreqEmoji = this.getRatingEmoji(deployFreqRating);
-          report += `### ${deployFreqEmoji} Deploy Frequency — **${doraMetrics.deploy_frequency_days}** (*${deployFreqRating}*)\n**Definition:** Number of releases in the period (normalized to per week)<br>\n**Sample size:** ${doraMetrics.deploy_count || 0} deployments\n\n`;
+          report += `### ${deployFreqEmoji} Deploy Frequency — **${doraMetrics.deploy_frequency_days}** (*${deployFreqRating}*)\n**Definition:** Number of releases in the period (normalized to per week)<br>\n**Sample size:** ${doraMetrics.deploy_count || 0} releases\n\n`;
         }
 
         report += `---\n\n`;
